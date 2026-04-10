@@ -6,6 +6,7 @@ PDF Report Generator for Stock Analysis
 
 import os
 import re
+import json
 import markdown
 from datetime import datetime
 from pathlib import Path
@@ -21,21 +22,40 @@ class ReportGenerator:
 
     @staticmethod
     def _render_markdown(text: str) -> str:
-        """把 Markdown 转为 HTML"""
+        """把 Markdown 转为 HTML，智能处理 LLM 常见输出格式"""
         if not text:
             return ""
-        # 先清理 ```json 代码块包裹（LLM 常见问题）
+        # 1. 清理 ```json 代码块包裹
         text = re.sub(r'^```\w*\n?', '', text.strip())
         text = re.sub(r'\n?```\s*$', '', text.strip())
-        # 如果清理后是 JSON 对象，提取有意义的文本
+        # 2. 如果是 JSON 对象，提取可读文本
         stripped = text.strip()
         if stripped.startswith("{") and stripped.endswith("}"):
             try:
                 import json as _json
-                obj = _json.loads(stripped)
-                # 优先取 report 字段
+                # 处理 LLM 输出中的转义换行符
+                fixed = stripped.replace('\\n', '\n')
+                obj = _json.loads(fixed)
                 if isinstance(obj, dict):
-                    text = obj.get("report", "") or obj.get("综合评价", "") or obj.get("基本面总结", "") or str(obj)
+                    # 优先取 report，其次其他长文本字段
+                    for field in ("report", "综合评价", "基本面总结", "executive_summary", "investment_thesis", "rationale"):
+                        val = obj.get(field, "")
+                        if isinstance(val, str) and len(val) > 50:
+                            text = val
+                            break
+                    else:
+                        # 没有长文本字段，格式化输出所有内容
+                        parts = []
+                        for k, v in obj.items():
+                            if isinstance(v, str) and v:
+                                parts.append(f"**{k}**: {v}")
+                            elif isinstance(v, list) and v:
+                                parts.append(f"**{k}**: " + "、".join(str(i) for i in v))
+                            elif isinstance(v, dict) and v:
+                                sub = "、".join(f"{sk}: {sv}" for sk, sv in v.items() if sv)
+                                if sub:
+                                    parts.append(f"**{k}**: {sub}")
+                        text = "\n\n".join(parts) if parts else str(obj)
             except:
                 pass
         return markdown.markdown(text, extensions=['nl2br', 'tables', 'fenced_code'])
@@ -618,6 +638,29 @@ class ReportGenerator:
                     <td>{risk["conservative"].get("stop_loss", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
                 </tr>
             </table>
+        </div>
+
+        <!-- 风控辩论详情 -->
+        <div class="section">
+            <h2>风控辩论详情</h2>
+            <div style="margin-bottom:15px;">
+                <h4 style="color:#c62828;">🔴 激进型分析师</h4>
+                <div style="font-size:11px;line-height:1.6;background:#fff5f5;padding:12px;border-radius:8px;border-left:3px solid #c62828;">
+                    {self._render_markdown(risk.get("aggressive", {}).get("full_text", "") if isinstance(risk.get("aggressive"), dict) else str(risk.get("aggressive", "")))}
+                </div>
+            </div>
+            <div style="margin-bottom:15px;">
+                <h4 style="color:#2e7d32;">🟢 保守型分析师</h4>
+                <div style="font-size:11px;line-height:1.6;background:#f5fff5;padding:12px;border-radius:8px;border-left:3px solid #2e7d32;">
+                    {self._render_markdown(risk.get("conservative", {}).get("full_text", "") if isinstance(risk.get("conservative"), dict) else str(risk.get("conservative", "")))}
+                </div>
+            </div>
+            <div style="margin-bottom:15px;">
+                <h4 style="color:#f57c00;">🟡 中立型分析师</h4>
+                <div style="font-size:11px;line-height:1.6;background:#fffde7;padding:12px;border-radius:8px;border-left:3px solid #f57c00;">
+                    {self._render_markdown(risk.get("neutral", {}).get("full_text", "") or risk.get("moderate", {}).get("full_text", "") if isinstance(risk.get("neutral", risk.get("moderate")), dict) else str(risk.get("neutral", risk.get("moderate", ""))))}
+                </div>
+            </div>
         </div>
 
         <!-- 风险因素 -->
