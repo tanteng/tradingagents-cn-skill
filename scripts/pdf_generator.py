@@ -514,7 +514,7 @@ class ReportGenerator:
             <div class="meta">
                 <div>股票代码: {stock_code}</div>
                 <div>报告生成时间: {timestamp}</div>
-                <div>分析框架: TradingAgents-CN 多智能体</div>
+                <div>分析框架: TradingAgents-CN Skill</div>
             </div>
         </div>
 
