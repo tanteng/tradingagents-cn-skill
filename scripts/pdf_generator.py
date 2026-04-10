@@ -65,6 +65,13 @@ class ReportGenerator:
                         text = "\n\n".join(parts) if parts else str(obj)
             except:
                 pass
+        # 容错：修复未闭合的 ** 标记（文本截断时可能出现）
+        if text.count('**') % 2 != 0:
+            text += '**'
+        # 容错：修复未闭合的 * 标记
+        single_stars = len(re.findall(r'(?<!\*)\*(?!\*)', text))
+        if single_stars % 2 != 0:
+            text += '*'
         return markdown.markdown(text, extensions=['nl2br', 'tables', 'fenced_code'])
 
     def generate(
