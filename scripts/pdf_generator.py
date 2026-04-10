@@ -26,8 +26,15 @@ class ReportGenerator:
         if not text:
             return ""
         # 1. 清理 ```json 代码块包裹
-        text = re.sub(r'^```\w*\n?', '', text.strip())
-        text = re.sub(r'\n?```\s*$', '', text.strip())
+        if text.startswith('```'):
+            lines = text.split('\n')
+            # 去掉第一行的 ```json 或 ```
+            if lines[0].strip().startswith('```'):
+                lines = lines[1:]
+            # 去掉最后一行的 ```
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            text = '\n'.join(lines).strip()
         # 2. 如果是 JSON 对象，提取可读文本
         stripped = text.strip()
         if stripped.startswith("{") and stripped.endswith("}"):
@@ -300,7 +307,28 @@ class ReportGenerator:
         profitability = fa.get("盈利能力", {})
         growth = fa.get("成长性", {})
         health = fa.get("财务健康", {})
-        fund_summary = fa.get("综合评价", "") or fa.get("基本面总结", "") or fund_analyst_data.get("基本面总结", "") or fund_analyst_data.get("report", "")[:200] or (fund_analyst_data.get("analysis", [""])[0] if fund_analyst_data.get("analysis") else "待分析")
+        # 综合评价：先从结构化字段取，再从 report 文本中提取
+        fund_summary = fa.get("综合评价", "") or fa.get("基本面总结", "") or fund_analyst_data.get("基本面总结", "")
+        if not fund_summary:
+            # report 可能是 ```json {"report": "..."} ``` 嵌套格式
+            _raw_report = fund_analyst_data.get("report", "")
+            if isinstance(_raw_report, str) and _raw_report:
+                _cleaned = re.sub(r'^```\w*\s*', '', _raw_report.strip())
+                _cleaned = re.sub(r'```\s*$', '', _cleaned.strip())
+                if _cleaned.startswith('{'):
+                    try:
+                        _parsed = json.loads(_cleaned)
+                        if isinstance(_parsed, dict):
+                            fund_summary = _parsed.get("report", "") or _parsed.get("综合评价", "") or _parsed.get("基本面总结", "")
+                    except:
+                        # JSON 解析失败，尝试手工提取 report 字段的值
+                        _m = re.search(r'"report"\s*:\s*"(.*?)(?:"\s*[,}])', _cleaned[:5000], re.DOTALL)
+                        if _m:
+                            fund_summary = _m.group(1).replace('\\n', '\n').replace('\\"', '"')
+                if not fund_summary:
+                    fund_summary = _cleaned[:500]
+        if not fund_summary:
+            fund_summary = (fund_analyst_data.get("analysis", [""])[0] if fund_analyst_data.get("analysis") else "待分析")
         fund_summary = self._render_markdown(fund_summary) if fund_summary else "待分析"
 
         fund_html = "<ul>"
