@@ -1,0 +1,11 @@
+scripts/reports/
+scripts/logs/
+scripts/results/
+scripts/__pycache__/
+*.pyc
+*.bak
+scripts/run_analysis.py
+scripts/run_analysis_steps.py
+scripts/generate_all_results.py
+scripts/generate_pdf.py
+references_backup_20260411/
