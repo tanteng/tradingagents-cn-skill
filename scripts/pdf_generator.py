@@ -5,6 +5,7 @@ PDF Report Generator for Stock Analysis
 """
 
 import os
+import re
 import markdown
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +24,21 @@ class ReportGenerator:
         """把 Markdown 转为 HTML"""
         if not text:
             return ""
-        return markdown.markdown(text, extensions=['nl2br', 'tables'])
+        # 先清理 ```json 代码块包裹（LLM 常见问题）
+        text = re.sub(r'^```\w*\n?', '', text.strip())
+        text = re.sub(r'\n?```\s*$', '', text.strip())
+        # 如果清理后是 JSON 对象，提取有意义的文本
+        stripped = text.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                import json as _json
+                obj = _json.loads(stripped)
+                # 优先取 report 字段
+                if isinstance(obj, dict):
+                    text = obj.get("report", "") or obj.get("综合评价", "") or obj.get("基本面总结", "") or str(obj)
+            except:
+                pass
+        return markdown.markdown(text, extensions=['nl2br', 'tables', 'fenced_code'])
 
     def generate(
         self,
@@ -232,16 +247,41 @@ class ReportGenerator:
             for fk, fv in _financials.items():
                 if fk not in fa:
                     fa[fk] = fv
+        # 从 report 文本提取估值数据填充 N/A 字段
+        _rpt = fund_analyst_data.get("report", "")
+        if isinstance(_rpt, str) and len(_rpt) > 50:
+            _rpt_clean = re.sub(r'```\w*\n?', '', _rpt).replace('```', '')
+            def _xtr(text, pats):
+                for p in pats:
+                    m = re.search(p, text, re.IGNORECASE)
+                    if m: return m.group(1).strip()
+                return None
+            _extracts = {
+                "PE": _xtr(_rpt_clean, [r'PE[（(TTM)]*[）)]?[：:≈约为\s]*([\d.]+|亏损|负值|N/A)', r'市盈率[：:≈约为\s]*([\d.]+|亏损)']),
+                "PB": _xtr(_rpt_clean, [r'PB[：:≈约为\s]*([\d.]+)', r'市净率[：:≈约为\s]*([\d.]+)']),
+                "ROE": _xtr(_rpt_clean, [r'ROE[：:≈约为\s]*([\-\d.]+%?)', r'净资产收益率[：:≈约为\s]*([\-\d.]+%?)']),
+                "营收增速": _xtr(_rpt_clean, [r'营收[同比]*增[速长率][：:≈约为\s]*([\d.]+%)', r'revenue.{0,10}grew?[：:≈约为\s]*([\d.]+%)']),
+                "毛利率": _xtr(_rpt_clean, [r'毛利率[：:≈约为\s]*([\d.]+%)', r'[Gg]ross [Mm]argin[：:≈约为\s]*([\d.]+%)']),
+                "净利率": _xtr(_rpt_clean, [r'净利[润率][率]?[：:≈约为\s]*([\-\d.]+%)', r'[Nn]et [Mm]argin[：:≈约为\s]*([\-\d.]+%)']),
+                "负债率": _xtr(_rpt_clean, [r'负债率[：:≈约为\s]*([\d.]+%)', r'资产负债率[：:≈约为\s]*([\d.]+%)']),
+            }
+            # 填充到 fa 嵌套结构中
+            if isinstance(fa, dict):
+                for sect_val in fa.values():
+                    if isinstance(sect_val, dict):
+                        for k in list(sect_val.keys()):
+                            if sect_val[k] in ("N/A", "", None) and k in _extracts and _extracts[k] and _extracts[k] != "N/A":
+                                sect_val[k] = _extracts[k]
+                # 也填充到 fa 顶层
+                for k, v in _extracts.items():
+                    if v and v != "N/A" and fa.get(k) in ("N/A", "", None):
+                        fa[k] = v
         valuation = fa.get("估值分析", {})
         profitability = fa.get("盈利能力", {})
         growth = fa.get("成长性", {})
         health = fa.get("财务健康", {})
         fund_summary = fa.get("综合评价", "") or fa.get("基本面总结", "") or fund_analyst_data.get("基本面总结", "") or fund_analyst_data.get("report", "")[:200] or (fund_analyst_data.get("analysis", [""])[0] if fund_analyst_data.get("analysis") else "待分析")
-        # 清理 markdown 代码块标记
-        if fund_summary.startswith("```"):
-            import re as _re
-            fund_summary = _re.sub(r'^```\w*\n?', '', fund_summary)
-            fund_summary = _re.sub(r'\n?```$', '', fund_summary)
+        fund_summary = self._render_markdown(fund_summary) if fund_summary else "待分析"
 
         fund_html = "<ul>"
         if valuation and isinstance(valuation, dict) and valuation:
@@ -283,8 +323,8 @@ class ReportGenerator:
                 round_num = r.get("round", i + 1)
                 bull_text = r.get("bull", "")
                 bear_text = r.get("bear", "")
-                bull_html_content = bull_text.replace("\n", "<br>") if bull_text else "<p>待补充</p>"
-                bear_html_content = bear_text.replace("\n", "<br>") if bear_text else "<p>待补充</p>"
+                bull_html_content = self._render_markdown(bull_text) if bull_text else "<p>待补充</p>"
+                bear_html_content = self._render_markdown(bear_text) if bear_text else "<p>待补充</p>"
                 debate_html += f"""
                 <div class="debate-round">
                     <h4 class="debate-round-title">第{round_num}轮辩论</h4>
@@ -602,7 +642,7 @@ class ReportGenerator:
         <!-- 免责声明 -->
         <div class="disclaimer">
             <strong>免责声明:</strong><br>
-            本报告由 AI 多智能体系统自动生成，基于公开信息和算法模型分析。
+            本报告由 TradingAgents-CN Skill自动生成，基于公开信息和算法模型分析。
             本报告仅供研究和学习目的，不构成任何形式的投资建议或邀约。
             投资有风险，入市需谨慎。过去的表现不代表未来的收益。
             请在做出任何投资决策前，咨询专业的金融顾问。
