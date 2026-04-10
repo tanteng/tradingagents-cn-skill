@@ -223,11 +223,25 @@ class ReportGenerator:
         # 生成基本面分析 HTML
         fund_analyst_data = parallel.get("fundamentals_analyst", {})
         fa = fund_analyst_data.get("fundamentals_analysis", {})
+        # v3 兼容：如果 fundamentals_analysis 是字符串，尝试从 financials 获取结构化数据
+        if isinstance(fa, str):
+            fa = fund_analyst_data.get("financials", {}) or {}
+        # 合并 financials 到 fa 中
+        _financials = fund_analyst_data.get("financials", {})
+        if isinstance(_financials, dict) and isinstance(fa, dict):
+            for fk, fv in _financials.items():
+                if fk not in fa:
+                    fa[fk] = fv
         valuation = fa.get("估值分析", {})
         profitability = fa.get("盈利能力", {})
         growth = fa.get("成长性", {})
         health = fa.get("财务健康", {})
-        fund_summary = fa.get("综合评价", "") or (fund_analyst_data.get("analysis", [""])[0] if fund_analyst_data.get("analysis") else "待分析")
+        fund_summary = fa.get("综合评价", "") or fa.get("基本面总结", "") or fund_analyst_data.get("基本面总结", "") or fund_analyst_data.get("report", "")[:200] or (fund_analyst_data.get("analysis", [""])[0] if fund_analyst_data.get("analysis") else "待分析")
+        # 清理 markdown 代码块标记
+        if fund_summary.startswith("```"):
+            import re as _re
+            fund_summary = _re.sub(r'^```\w*\n?', '', fund_summary)
+            fund_summary = _re.sub(r'\n?```$', '', fund_summary)
 
         fund_html = "<ul>"
         if valuation and isinstance(valuation, dict) and valuation:
@@ -261,7 +275,32 @@ class ReportGenerator:
         # 生成辩论 HTML
         debate_html = ""
         debate_rounds = result.get("debate", {}).get("rounds", [])
-        if debate_rounds:
+        # v3 兼容：如果 rounds 中的 bull/bear 是纯文本字符串，直接渲染
+        _has_text_debate = debate_rounds and isinstance(debate_rounds[0].get("bull", ""), str) and len(debate_rounds[0].get("bull", "")) > 50
+        if _has_text_debate:
+            # v3 模式：纯文本辩论，直接渲染
+            for i, r in enumerate(debate_rounds):
+                round_num = r.get("round", i + 1)
+                bull_text = r.get("bull", "")
+                bear_text = r.get("bear", "")
+                bull_html_content = bull_text.replace("\n", "<br>") if bull_text else "<p>待补充</p>"
+                bear_html_content = bear_text.replace("\n", "<br>") if bear_text else "<p>待补充</p>"
+                debate_html += f"""
+                <div class="debate-round">
+                    <h4 class="debate-round-title">第{round_num}轮辩论</h4>
+                    <div class="debate-columns">
+                        <div class="debate-column bull">
+                            <div class="debate-column-header">🐂 多方论点</div>
+                            <div style="font-size:11px;line-height:1.6;padding:8px;">{bull_html_content}</div>
+                        </div>
+                        <div class="debate-column bear">
+                            <div class="debate-column-header">🐻 空方论点</div>
+                            <div style="font-size:11px;line-height:1.6;padding:8px;">{bear_html_content}</div>
+                        </div>
+                    </div>
+                </div>
+                """
+        elif debate_rounds:
             for i, r in enumerate(debate_rounds):
                 round_num = r.get("round", i + 1)
                 
@@ -446,10 +485,10 @@ class ReportGenerator:
                     <div class="value">{self._format_price(trading.get("stop_loss"), "不适用", trading.get("reference_stop"))}</div>
                 </div>
             </div>
-            <p><strong>仓位建议:</strong> {'<span style="color:#c62828">数据获取失败</span>' if trading.get('_position_size_failed') else trading.get('position_size', '')}
+            <p><strong>仓位建议:</strong> {'<span style="color:#c62828">数据获取失败</span>' if trading.get('_position_size_failed') else (trading.get('position_size', '') + '（观望中）' if trading.get('decision') in ('观望', '卖出') and trading.get('position_size') == '0%' else trading.get('position_size', ''))}
 </p>
             <p><strong>入场条件:</strong> {trading.get("entry_criteria", "")}</p>
-            <p><strong>出场条件:</strong> {'<span style="color:#c62828">数据获取失败</span>' if trading.get('_exit_criteria_failed') else trading.get('exit_criteria', '')}
+            <p><strong>出场条件:</strong> {'<span style="color:#c62828">数据获取失败</span>' if trading.get('_exit_criteria_failed') else (trading.get('exit_criteria', '') + '（当前为观望状态）' if trading.get('exit_criteria') == '不适用' else trading.get('exit_criteria', ''))}
 </p>
         </div>
 
@@ -458,7 +497,7 @@ class ReportGenerator:
             <h2>新闻与情绪分析</h2>
             <div class="news-section">
                 <div class="sentiment-summary">
-                    <strong>新闻情绪:</strong> {news_analyst.get("sentiment", "待获取")} | 共 {news_analyst.get("news_count", 0)} 条新闻
+                    <strong>新闻情绪:</strong> {news_analyst.get("sentiment", news_analyst.get("新闻情绪", "待获取"))} | 共 {len(news_analyst.get("news_list", []))} 条新闻
                 </div>
                 {news_list_html}
             </div>
@@ -522,21 +561,21 @@ class ReportGenerator:
                 </tr>
                 <tr>
                     <td>{risk["aggressive"].get("position", "激进派")}</td>
-                    <td>{risk["aggressive"].get("position_size", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
-                    <td>{risk["aggressive"].get("target_return", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
-                    <td>{risk["aggressive"].get("stop_loss", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
+                    <td>{risk["aggressive"].get("position_size", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{risk["aggressive"].get("target_return", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{risk["aggressive"].get("stop_loss", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
                 </tr>
                 <tr>
                     <td>{risk["neutral"].get("position", "中性派")}</td>
-                    <td>{risk["neutral"].get("position_size", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
-                    <td>{risk["neutral"].get("target_return", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
-                    <td>{risk["neutral"].get("stop_loss", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
+                    <td>{risk["neutral"].get("position_size", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{risk["neutral"].get("target_return", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{risk["neutral"].get("stop_loss", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
                 </tr>
                 <tr>
                     <td>{risk["conservative"].get("position", "保守派")}</td>
-                    <td>{risk["conservative"].get("position_size", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
-                    <td>{risk["conservative"].get("target_return", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
-                    <td>{risk["conservative"].get("stop_loss", "获取数据失败") if not risk.get("_risk_debate_failed") else "获取数据失败"}</td>
+                    <td>{risk["conservative"].get("position_size", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{risk["conservative"].get("target_return", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{risk["conservative"].get("stop_loss", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
                 </tr>
             </table>
         </div>

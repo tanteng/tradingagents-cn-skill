@@ -134,7 +134,9 @@ def adapt_v3_to_v2(data: dict) -> dict:
             "analysis": [news.get("report", "")],
         }
     else:
-        result_news = news
+        result_news = dict(news)
+        if "sentiment" not in result_news:
+            result_news["sentiment"] = result_news.get("新闻情绪", "中性")
 
     # social_analyst
     social = pa.get("social_analyst", {})
@@ -220,10 +222,18 @@ def adapt_v3_to_v2(data: dict) -> dict:
         if isinstance(val, str):
             # 纯文本 → 转为 v2 结构
             lines = [l.strip() for l in val.split("\n") if l.strip() and len(l.strip()) > 10]
+            # 尝试从文本中提取结构化数据
+            import re as _re
+            pos_match = _re.search(r'(?:建议仓位|仓位)[：:]\s*(\S+)', val)
+            ret_match = _re.search(r'(?:目标收益|预期收益)[：:]\s*(\S+)', val)
+            sl_match = _re.search(r'(?:止损控制|止损)[：:]\s*(\S+)', val)
             adapted_risk[role] = {
                 "stance": lines[0][:100] if lines else "待评估",
                 "points": lines[:5] if lines else ["待分析"],
-                "full_text": val,  # 保留原始文本
+                "full_text": val,
+                "position_size": pos_match.group(1) if pos_match else "详见辩论",
+                "target_return": ret_match.group(1) if ret_match else "详见辩论",
+                "stop_loss": sl_match.group(1) if sl_match else "详见辩论",
             }
         else:
             adapted_risk[role] = val
