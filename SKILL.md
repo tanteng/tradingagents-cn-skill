@@ -137,7 +137,7 @@ Step 10: 组装 JSON → 生成 PDF
 
 **对每条搜索结果**：调用 web_fetch 获取正文摘要（前 200 字）。
 
-将搜索结果整理为 JSON 数组：
+将搜索结果整理为 JSON 数组，**保存为变量 `news_data`**：
 ```json
 {
   "news_list": [
@@ -151,6 +151,8 @@ Step 10: 组装 JSON → 生成 PDF
 - `news_list` 数组**至少包含 3 条新闻**，不足则追加搜索
 - `summary` 字段不得为空，最少 50 字
 - 如果实在搜不到，设置 `news_list` 为空数组但 `sentiment` 设为 "暂无数据"
+
+**⚠️ 重要**：`news_data` 变量必须在 Step 10 组装 JSON 时写入 `"news_data"` 字段，否则 PDF 报告中新闻部分会为空。
 
 ---
 
@@ -418,19 +420,26 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step portfolio
 
 将所有结果组装为完整 JSON（格式详见 `references/data_schema.md`）：
 
+**⚠️ 组装检查清单**（缺一不可）：
+- [ ] `news_data.news_list` 必须包含 Step 2 的新闻数组（不是空对象 `{}`）
+- [ ] `parallel_analysis.news_analyst` 中也应包含 `news_list`
+- [ ] 所有 debate 步骤的结果必须是完整 JSON 对象（不是字符串）
+
 ```json
 {
   "stock_code": "{股票代码}",
   "stock_name": "{股票名称}",
   "current_price": "{当前价格}",
   "timestamp": "{ISO 8601 时间戳}",
+  "news_data": {
+    "news_list": [Step 2 搜索到的新闻数组，不可为空]
+  },
   "parallel_analysis": {
     "tech_analyst": "{Step 3 中的 tech_analyst}",
     "fundamentals_analyst": "{Step 3 中的 fundamentals_analyst}",
-    "news_analyst": "{Step 3 中的 news_analyst}",
+    "news_analyst": "{Step 3 中的 news_analyst，确保包含 news_list}",
     "social_analyst": "{Step 3 中的 social_analyst}"
   },
-  "news_data": "{Step 2 的 news_data，含 news_list}",
   "investment_debate": {
     "bull_r1": "{Step 4A 结果}",
     "bear_r1": "{Step 4B 结果}",

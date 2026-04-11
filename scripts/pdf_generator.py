@@ -250,29 +250,58 @@ class ReportGenerator:
         # 生成技术分析 HTML
         tech_analyst_data = parallel.get("tech_analyst", {})
         ta = tech_analyst_data.get("technical_analysis", {})
+
+        # 兼容两种数据结构：
+        # 结构A（嵌套）: tech_analyst.technical_analysis.趋势判断 / .关键指标 / .操作建议
+        # 结构B（扁平）: tech_analyst.indicators / .操作建议 / .技术信号总结
         trend = ta.get("趋势判断", {})
-        indicators = ta.get("关键指标", {})
-        advice = ta.get("操作建议", {})
-        tech_summary = ta.get("技术信号总结", "") or (tech_analyst_data.get("analysis", [""])[0] if tech_analyst_data.get("analysis") else "待分析")
+        nested_indicators = ta.get("关键指标", {})
+        advice = ta.get("操作建议", {}) or tech_analyst_data.get("操作建议", {})
+        flat_indicators = tech_analyst_data.get("indicators", {})
+        tech_summary = (
+            ta.get("技术信号总结", "")
+            or tech_analyst_data.get("技术信号总结", "")
+            or (tech_analyst_data.get("analysis", [""])[0] if tech_analyst_data.get("analysis") else "")
+        )
+
+        # 合并 indicators：优先用嵌套结构，扁平结构兜底
+        all_indicators = nested_indicators or flat_indicators
 
         tech_html = "<ul>"
-        if trend and isinstance(trend, dict) and trend:
+        has_data = False
+
+        if trend and isinstance(trend, dict):
             tech_html += "<li><strong>趋势判断：</strong> "
             tech_html += " / ".join(f"{k}: {v}" for k, v in trend.items() if v)
             tech_html += "</li>"
-        if indicators and isinstance(indicators, dict) and indicators:
+            has_data = True
+
+        if all_indicators and isinstance(all_indicators, dict):
             tech_html += "<li><strong>关键指标：</strong></li>"
-            for k, v in indicators.items():
+            for k, v in all_indicators.items():
                 tech_html += f'<li style="margin-left:16px">{k}: {v}</li>'
-        if advice and isinstance(advice, dict) and advice:
+            has_data = True
+
+        if advice and isinstance(advice, dict):
             tech_html += "<li><strong>操作建议：</strong></li>"
             for k, v in advice.items():
                 tech_html += f'<li style="margin-left:16px">{k}: {v}</li>'
+            has_data = True
+
         if tech_summary:
             tech_html += f"<li><strong>技术信号：</strong>{tech_summary}</li>"
-        if not trend and not indicators and not advice:
-            tech_html = "<ul><li>待分析</li>"
+            has_data = True
+
         tech_html += "</ul>"
+
+        # 渲染 report 长文本（技术分析的完整报告）
+        tech_report = tech_analyst_data.get("report", "")
+        if tech_report and len(tech_report) > 50:
+            tech_html += f'<div style="margin-top:12px;font-size:11px;line-height:1.6;background:#f9f9f9;padding:12px;border-radius:8px;">{self._render_markdown(tech_report)}</div>'
+            has_data = True
+
+        if not has_data:
+            tech_html = "<ul><li>待分析</li></ul>"
 
         # 生成基本面分析 HTML
         fund_analyst_data = parallel.get("fundamentals_analyst", {})

@@ -76,9 +76,23 @@ def normalize(data: dict) -> dict:
     # news_analyst: 注入 news_list
     na = pa.get("news_analyst", {})
     news_data = data.get("news_data", {})
-    if not na.get("news_list") and news_data.get("news_list"):
-        na["news_list"] = news_data["news_list"]
-    na["news_count"] = len(na.get("news_list", []))
+
+    # 从多个可能的来源查找 news_list
+    news_list = (
+        na.get("news_list")  # 来源1: news_analyst 自带
+        or news_data.get("news_list")  # 来源2: 顶层 news_data
+        or data.get("news_list")  # 来源3: 顶层 news_list（Agent 可能直接放这里）
+        or []
+    )
+    # 如果 news_list 是字典形式的包装（Agent 有时输出 {"news_list": [...]}）
+    if isinstance(news_data, dict) and not news_list:
+        for v in news_data.values():
+            if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict) and "title" in v[0]:
+                news_list = v
+                break
+
+    na["news_list"] = news_list
+    na["news_count"] = len(news_list)
     if not na.get("platforms"):
         na["platforms"] = {"新闻": {"sentiment": na.get("新闻情绪", na.get("sentiment", "中性"))}}
     result["parallel_analysis"]["news_analyst"] = na
