@@ -25,9 +25,14 @@ class ReportGenerator:
         """把 Markdown 转为 HTML，智能处理 LLM 常见输出格式"""
         if not text:
             return ""
+
+        # 0. 处理字面量转义换行符（LLM 常见输出问题）
+        text = text.replace("\\n\\n", "\n\n").replace("\\n", "\n")
+        text = text.replace("\\t", "\t")
+
         # 1. 清理 ```json 代码块包裹
-        if text.startswith('```'):
-            lines = text.split('\n')
+        if text.strip().startswith('```'):
+            lines = text.strip().split('\n')
             # 去掉第一行的 ```json 或 ```
             if lines[0].strip().startswith('```'):
                 lines = lines[1:]
@@ -35,20 +40,21 @@ class ReportGenerator:
             if lines and lines[-1].strip() == '```':
                 lines = lines[:-1]
             text = '\n'.join(lines).strip()
+
         # 2. 如果是 JSON 对象，提取可读文本
         stripped = text.strip()
         if stripped.startswith("{") and stripped.endswith("}"):
             try:
                 import json as _json
-                # 处理 LLM 输出中的转义换行符
-                fixed = stripped.replace('\\n', '\n')
-                obj = _json.loads(fixed)
+                obj = _json.loads(stripped)
                 if isinstance(obj, dict):
-                    # 优先取 report，其次其他长文本字段
-                    for field in ("report", "综合评价", "基本面总结", "executive_summary", "investment_thesis", "rationale"):
+                    # 优先取长文本字段
+                    for field in ("debate_text", "report", "综合评价", "基本面总结",
+                                  "executive_summary", "investment_thesis", "rationale",
+                                  "full_text"):
                         val = obj.get(field, "")
                         if isinstance(val, str) and len(val) > 50:
-                            text = val
+                            text = val.replace("\\n\\n", "\n\n").replace("\\n", "\n")
                             break
                     else:
                         # 没有长文本字段，格式化输出所有内容

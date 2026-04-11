@@ -106,10 +106,43 @@ def normalize(data: dict) -> dict:
 
     # 从 JSON 结构中提取（新 Prompt 输出 JSON）
     def _extract_debate_text(val):
-        """从辩论输出中提取文本，兼容 JSON dict 和纯文本"""
+        """从辩论输出中提取文本，兼容 JSON dict、JSON 字符串和纯文本"""
         if isinstance(val, dict):
-            return val.get("debate_text", json.dumps(val, ensure_ascii=False))
-        return str(val) if val else ""
+            text = val.get("debate_text", "")
+            if not text:
+                # 没有 debate_text，格式化整个 dict 为可读文本
+                text = json.dumps(val, ensure_ascii=False, indent=2)
+            return _clean_debate_text(text)
+
+        if isinstance(val, str):
+            val = val.strip()
+            # 尝试解析为 JSON（Agent 可能把整个 JSON 对象序列化为字符串）
+            if val.startswith("{"):
+                try:
+                    obj = json.loads(val)
+                    if isinstance(obj, dict) and "debate_text" in obj:
+                        return _clean_debate_text(obj["debate_text"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            return _clean_debate_text(val)
+
+        return ""
+
+    def _clean_debate_text(text):
+        """清理辩论文本中的格式问题"""
+        if not isinstance(text, str):
+            return str(text) if text else ""
+        # 1. 处理字面量 \n → 真实换行
+        text = text.replace("\\n\\n", "\n\n").replace("\\n", "\n")
+        # 2. 去掉 JSON 代码块包裹
+        if text.strip().startswith("```"):
+            lines = text.strip().split("\n")
+            if lines[0].strip().startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        return text
 
     bull_r1 = _extract_debate_text(inv_debate.get("bull_r1", ""))
     bear_r1 = _extract_debate_text(inv_debate.get("bear_r1", ""))
@@ -157,12 +190,19 @@ def normalize(data: dict) -> dict:
     adapted_risk = {}
     for role in ("aggressive", "conservative", "neutral"):
         val = rd.get(role, {})
+        # 如果是 JSON 字符串，先解析
+        if isinstance(val, str) and val.strip().startswith("{"):
+            try:
+                val = json.loads(val)
+            except (json.JSONDecodeError, TypeError):
+                pass
         if isinstance(val, dict):
             # 新 JSON 格式（有 debate_text 字段）
+            full_text = _clean_debate_text(val.get("debate_text", ""))
             adapted_risk[role] = {
                 "stance": val.get("stance", "待评估"),
                 "points": val.get("key_points", []),
-                "full_text": val.get("debate_text", ""),
+                "full_text": full_text,
                 "position_size": val.get("position_size", "N/A"),
                 "target_return": val.get("target_return", "N/A"),
                 "stop_loss": val.get("stop_loss", "N/A"),
