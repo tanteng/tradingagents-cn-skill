@@ -634,7 +634,7 @@ class ReportGenerator:
         <div class="section">
             <h2>执行摘要</h2>
             <div class="decision-box">
-                <div class="big">{final["final_recommendation"]}</div>
+                <div class="big">{final.get("rating", final.get("final_recommendation", "持有"))}</div>
                 <div class="sub">风险等级: {final["risk_level"]} | 投资期限: {final["investment_horizon"]}</div>
             </div>
             <p><strong>核心逻辑:</strong> {manager["rationale"]}</p>
@@ -770,7 +770,7 @@ class ReportGenerator:
             <div style="margin-bottom:15px;">
                 <h4 style="color:#f57c00;">🟡 中立型分析师</h4>
                 <div style="font-size:11px;line-height:1.6;background:#fffde7;padding:12px;border-radius:8px;border-left:3px solid #f57c00;">
-                    {self._render_markdown(self._extract_debate_text(risk.get("neutral", "") or risk.get("moderate", "")))}
+                    {self._render_markdown(self._extract_debate_text(risk.get("neutral", {})))}
                 </div>
             </div>
         </div>

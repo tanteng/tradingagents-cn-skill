@@ -430,61 +430,87 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step portfolio
 
 ## Step 10: 生成 PDF 报告
 
-将所有结果组装为完整 JSON（格式详见 `references/data_schema.md`）：
+**⚠️ 核心规则：将所有步骤的结果组装成一个完整 JSON 对象，通过 stdin 一次性传给 generate_report.py。不存中间文件。**
 
-**⚠️ 组装检查清单**（缺一不可）：
-- [ ] `news_data.news_list` 必须包含 Step 2 的新闻数组（不是空对象 `{}`）
-- [ ] `parallel_analysis.news_analyst` 中也应包含 `news_list`
-- [ ] 所有 debate 步骤的结果必须是完整 JSON 对象（不是字符串）
+严格按照以下结构组装 JSON。每个字段必须是 JSON **对象**（不是字符串），直接嵌入对应步骤的完整输出：
 
 ```json
 {
-  "stock_code": "{股票代码}",
-  "stock_name": "{股票名称}",
-  "current_price": "{当前价格}",
-  "timestamp": "{ISO 8601 时间戳}",
+  "stock_code": "1211.HK",
+  "stock_name": "比亚迪股份",
+  "current_price": 105.1,
+  "timestamp": "2026-04-12T00:00:00",
   "news_data": {
-    "news_list": [Step 2 搜索到的新闻数组，不可为空]
+    "news_list": [ ... Step 2 的新闻数组 ... ]
   },
   "parallel_analysis": {
-    "tech_analyst": "{Step 3 中的 tech_analyst}",
-    "fundamentals_analyst": "{Step 3 中的 fundamentals_analyst}",
-    "news_analyst": "{Step 3 中的 news_analyst，确保包含 news_list}",
-    "social_analyst": "{Step 3 中的 social_analyst}"
+    "tech_analyst": { ... Step 3A 的完整 JSON 输出 ... },
+    "fundamentals_analyst": { ... Step 3B 的完整 JSON 输出 ... },
+    "news_analyst": { ... Step 3C 的完整 JSON 输出（含 news_list）... },
+    "social_analyst": { ... Step 3D 的完整 JSON 输出 ... }
   },
   "investment_debate": {
-    "bull_r1": "{Step 4A 结果}",
-    "bear_r1": "{Step 4B 结果}",
-    "bull_r2": "{Step 5A 结果}",
-    "bear_r2": "{Step 5B 结果}"
+    "bull_r1": { "debate_text": "...", "core_logic": "...", "bull_case": [...], "confidence": 0.8 },
+    "bear_r1": { "debate_text": "...", "core_logic": "...", "bear_case": [...], "confidence": 0.7 },
+    "bull_r2": { "debate_text": "...", "core_logic": "...", "bull_case": [...], "confidence": 0.8 },
+    "bear_r2": { "debate_text": "...", "core_logic": "...", "bear_case": [...], "confidence": 0.7 }
   },
-  "manager_decision": "{Step 6 结果}",
-  "trading_plan": "{Step 7 结果}",
+  "manager_decision": { "recommendation": "买入", "rationale": "...", "investment_plan": "..." },
+  "trading_plan": { "decision": "买入", "buy_price": 103.0, "target_price": 125.0, "stop_loss": 97.0, ... },
   "risk_debate": {
-    "aggressive": "{Step 8A 结果}",
-    "conservative": "{Step 8B 结果}",
-    "neutral": "{Step 8C 结果}"
+    "aggressive": { "debate_text": "...", "stance": "...", "position_size": "...", ... },
+    "conservative": { "debate_text": "...", "stance": "...", "position_size": "...", ... },
+    "neutral": { "debate_text": "...", "stance": "...", "position_size": "...", ... }
   },
-  "final_decision": "{Step 9 结果}"
+  "final_decision": { "rating": "买入", "executive_summary": "...", "investment_thesis": "...", "risk_level": "中", ... }
 }
 ```
 
-**生成 PDF：**
+**类型规则（严格遵守）**：
+- `stock_code`, `stock_name`, `timestamp`: **string**
+- `current_price`: **number**
+- `news_data.news_list`: **array**，每项是 object
+- `parallel_analysis.*`: **object**，每个分析师的完整 JSON 输出
+- `investment_debate.bull_r1` 等: **object**，不是 string，必须包含 `debate_text` 字段
+- `risk_debate.aggressive` 等: **object**，不是 string，必须包含 `debate_text` 字段
+- `manager_decision`, `trading_plan`, `final_decision`: **object**
 
-```bash
-echo '<完整JSON>' | python3 {baseDir}/scripts/normalize_data.py | python3 {baseDir}/scripts/generate_report.py --stdin --output-dir {用户工作目录}
+**❌ 错误示例**：
+```json
+{
+  "investment_debate": {
+    "bull_r1": "这是一段文字..."
+  }
+}
+```
+bull_r1 的值必须是 object，不是 string。
+
+**✅ 正确示例**：
+```json
+{
+  "investment_debate": {
+    "bull_r1": { "debate_text": "这是一段文字...", "core_logic": "...", "bull_case": [...] }
+  }
+}
 ```
 
-如果命令失败，检查 JSON 完整性，补充缺失字段后重试一次。
+**生成 PDF 命令**：
 
-**重要：必须将 PDF 文件直接发送给用户，不要只显示文件路径。** 使用文件发送能力将 PDF 作为附件发给用户。
+```bash
+echo '<完整JSON>' | python3 {baseDir}/scripts/generate_report.py
+```
+
+只有这一种调用方式。不需要 normalize_data.py，不需要 --stdin 参数，不需要中间文件。
+
+如果命令失败（exit code != 0），检查 JSON 字段完整性后重试一次。
+
+**必须将 PDF 文件直接发送给用户。** 使用文件发送能力将 PDF 作为附件发给用户。
 
 同时附上简要的分析摘要：
 - 评级（五级：买入/增持/持有/减持/卖出）
 - 关键价格：买入价、目标价、止损价
 - 风险等级和投资期限
 - 一句话投资论文
-
 ---
 
 ## 输出文件
