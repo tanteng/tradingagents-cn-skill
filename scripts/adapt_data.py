@@ -30,7 +30,34 @@ def adapt_v3_to_v2(data: dict) -> dict:
         "timestamp": data.get("timestamp", ""),
     }
 
+    # ===== news_data 适配 =====
+    news_data = data.get("news_data", {})
+    if not news_data or not news_data.get("news_list"):
+        _na = data.get("parallel_analysis", {}).get("news_analyst", {})
+        if _na and _na.get("key_points"):
+            kp = _na["key_points"]
+            sentiment = _na.get("新闻情绪", _na.get("sentiment", "中性"))
+            _news_list = []
+            for point in kp:
+                _news_list.append({
+                    "title": point[:50] + ("..." if len(point) > 50 else ""),
+                    "summary": point,
+                    "sentiment": sentiment if isinstance(sentiment, str) else "中性",
+                    "source": "分析师报告",
+                    "date": data.get("timestamp", "")[:10],
+                })
+            news_data = {"news_list": _news_list, "news_count": len(_news_list)}
+    result["news_data"] = news_data
+
     # ===== parallel_analysis 适配 =====
+    # 预注入：把 news_list 注入到 news_analyst 中（pdf_generator 从这里读）
+    _raw_na = data.get("parallel_analysis", {}).get("news_analyst", {})
+    if _raw_na and not _raw_na.get("news_list") and news_data.get("news_list"):
+        _raw_na["news_list"] = news_data["news_list"]
+        _raw_na["news_count"] = len(news_data["news_list"])
+        # 注入 platforms 兼容字段
+        if not _raw_na.get("platforms"):
+            _raw_na["platforms"] = {"新闻": {"sentiment": _raw_na.get("新闻情绪", "中性")}}
     pa = data.get("parallel_analysis", {})
 
     # 的分析师用 report 字段，v2 用各自不同的字段
@@ -161,20 +188,20 @@ def adapt_v3_to_v2(data: dict) -> dict:
 
     result_bull = {
         "bull_detail": {
-            "core_logic": bull_text[:200] if bull_text.strip() else "数据不足",
+            "core_logic": bull_text[:500] if bull_text.strip() else "数据不足",
             "bull_case": [p.strip() for p in bull_text.split("\n") if p.strip() and len(p.strip()) > 10][:5] or ["待分析"],
         },
         "role": "bull_analyst",
-        "analysis": [bull_text[:500]] if bull_text.strip() else ["待分析"],
+        "analysis": [bull_text] if bull_text.strip() else ["待分析"],
     }
 
     result_bear = {
         "bear_detail": {
-            "core_logic": bear_text[:200] if bear_text.strip() else "数据不足",
+            "core_logic": bear_text[:500] if bear_text.strip() else "数据不足",
             "bear_case": [p.strip() for p in bear_text.split("\n") if p.strip() and len(p.strip()) > 10][:5] or ["待分析"],
         },
         "role": "bear_analyst",
-        "analysis": [bear_text[:500]] if bear_text.strip() else ["待分析"],
+        "analysis": [bear_text] if bear_text.strip() else ["待分析"],
     }
 
     result["parallel_analysis"] = {
@@ -236,6 +263,16 @@ def adapt_v3_to_v2(data: dict) -> dict:
                 "stop_loss": sl_match.group(1) if sl_match else "详见辩论",
             }
         else:
+            # 清理 full_text 中的代码块标记
+            if isinstance(val, dict) and "full_text" in val:
+                ft = val["full_text"]
+                if isinstance(ft, str):
+                    lines = ft.split("\n")
+                    if lines and lines[0].strip().startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    val["full_text"] = "\n".join(lines).strip()
             adapted_risk[role] = val
     # v2 中有 moderate 而非 neutral
     if "neutral" in adapted_risk and "moderate" not in adapted_risk:
