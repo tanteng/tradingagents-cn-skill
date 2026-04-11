@@ -15,12 +15,24 @@ metadata:
       bins: ["python3"]
 ---
 
-# TradingAgents-CN Skill v2
+# TradingAgents-CN Skill v3
 
-多智能体股票分析框架。Agent 串行完成 10 步分析，参照 TradingAgents 论文架构：
+多智能体股票分析框架。Agent **在主进程中串行**完成 10 步分析，参照 TradingAgents 论文架构：
 四位分析师（1次调用）→ 多空辩论（2轮）→ 研究管理者裁决 → 交易员 → 风控三方辩论 → 投资组合经理最终决策 → PDF 报告。
 
 ## 全局规则
+
+### ⚠️ 禁止 SubAgent（最高优先级）
+
+**所有步骤必须在主 Agent 进程中串行执行，禁止使用 subagent、子任务、并行 agent 或任何形式的任务分派。**
+
+原因：本 Skill 的每一步都依赖前面步骤的完整输出（stock_data → 分析师报告 → 辩论 → 决策）。SubAgent 不共享上下文，会导致数据丢失（如新闻为空、技术指标缺失）。
+
+**具体要求：**
+- 不要使用 `dispatching-parallel-agents` 或类似机制
+- 不要把任何步骤委托给其他 agent 或 worker
+- 所有 LLM 调用、web_search、脚本执行都在同一个 agent 会话中完成
+- 每一步的结果必须保存在当前会话的变量/上下文中，供后续步骤直接引用
 
 ### 执行模式
 
