@@ -506,7 +506,7 @@ class ReportGenerator:
     <title>股票分析报告 - {stock_code}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; line-height: 1.6; color: #333; font-size: 12px; }}
+        body {{ font-family: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", "SimHei", sans-serif; line-height: 1.6; color: #333; font-size: 12px; }}
         .container {{ max-width: 800px; margin: 0 auto; padding: 30px; }}
         .header {{ text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1a73e8; padding-bottom: 15px; }}
         .header h1 {{ color: #1a73e8; font-size: 24px; margin-bottom: 8px; }}
