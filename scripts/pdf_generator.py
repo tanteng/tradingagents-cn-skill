@@ -99,8 +99,13 @@ class ReportGenerator:
         output_path.mkdir(parents=True, exist_ok=True)
 
         stock_code = analysis_result["stock_code"]
+        stock_name = analysis_result.get("stock_name", "").split("(")[0].split("（")[0].strip()
+        safe_name = re.sub(r"[^\w\u4e00-\u9fff]+", "_", stock_name).strip("_")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{stock_code}_{timestamp}.pdf"
+        if safe_name:
+            filename = f"{stock_code}_{safe_name}_{timestamp}.pdf"
+        else:
+            filename = f"{stock_code}_{timestamp}.pdf"
         pdf_path = output_path / filename
 
         # 数据预处理：自动修复常见问题
