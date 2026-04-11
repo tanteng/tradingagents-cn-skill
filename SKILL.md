@@ -1,6 +1,6 @@
 ---
 name: tradingagents-cn-skill
-version: 1.0.0
+version: 2.0.0
 description: >
   分析股票并生成 PDF 报告。当用户提到以下任何一种意图时触发：
   分析股票、股票分析、生成PDF、生成报告、股票报告、分析一下、
@@ -15,61 +15,31 @@ metadata:
       bins: ["python3"]
 ---
 
-# TradingAgents-CN Skill
+# TradingAgents-CN Skill v2
 
-多智能体股票分析框架。Agent 串行完成 17 步分析，参照 TradingAgents 论文架构：
-分析师团队 → 多空辩论（2轮）→ 研究管理者裁决 → 交易员 → 风控三方辩论 → 投资组合经理最终决策 → PDF 报告。
+多智能体股票分析框架。Agent 串行完成 10 步分析，参照 TradingAgents 论文架构：
+四位分析师（1次调用）→ 多空辩论（2轮）→ 研究管理者裁决 → 交易员 → 风控三方辩论 → 投资组合经理最终决策 → PDF 报告。
 
 ## 全局规则
 
-### 重试协议
+### 执行模式
 
-每次 LLM 调用后，**必须**通过 `validate_step.py` 验证输出：
+**全程自动执行，不询问用户。** 遇到错误自动重试（最多 3 次），某步失败使用默认值继续，只在最终输出 PDF 和摘要。
 
+### 验证策略
+
+**不需要每步验证**。只在以下两个节点使用 `validate_step.py`：
+1. **Step 8（投资组合经理）**：验证 rating 是否为五级之一
+2. **Step 10（PDF 生成前）**：如果 JSON 组装出错，用默认值兜底
+
+其他步骤直接信任 LLM 输出。如果某步 LLM 返回空或格式异常，获取默认值继续：
 ```bash
-echo '<LLM原始输出>' | python3 {baseDir}/scripts/validate_step.py --step <步骤名> --stock-code <股票代码> --attempt <次数>
+python3 {baseDir}/scripts/validate_step.py --step <步骤名> --default
 ```
-
-**处理规则：**
-- `exit 0` → stdout 是清洗后的 JSON，保存结果，进入下一步
-- `exit 1` → stderr 是 JSON 错误信息（含 `hint` 字段），将 hint 追加到 prompt 重新调用 LLM
-- 关键步骤（bull_r1、bear_r1、bull_r2、bear_r2、manager、trader、risk_aggressive、risk_conservative、risk_neutral、portfolio_manager）最多重试 **3 次**
-- 次要步骤（tech、fundamentals、news、social）最多重试 **2 次**
-- 超过重试上限 → 获取默认值继续：
-  ```bash
-  python3 {baseDir}/scripts/validate_step.py --step <步骤名> --default
-  ```
-
-**重试时的 prompt 追加格式：**
-```
-注意：上次输出格式有误。{hint}。请严格按要求的格式返回。
-```
-
-### LLM 调用失败重试
-
-如果 LLM 调用本身失败（返回空、网络超时、API 错误等非格式问题），**必须**执行以下重试：
-
-1. 等待 **5 秒**后重新调用同一步骤，使用相同的 prompt
-2. 最多重试 **2 次**（共 3 次尝试）
-3. 如果 3 次都失败：
-   - JSON 步骤：获取默认值继续（`validate_step.py --default`）
-   - 辩论步骤：使用占位文本 "该角色分析暂时不可用，请参考其他角色的分析。"
-4. 此规则适用于**所有步骤**，包括辩论步骤（Step 7-10、Step 13-15）
-
-### 辩论步骤的验证
-
-辩论步骤也要求输出 **JSON 格式**，包含 `debate_text`（自由论述长文本）和结构化摘要字段。通过 validate_step.py 验证：
-
-- `bull_r1`/`bull_r2` → `--step bull_debate`：必须包含 debate_text、core_logic、bull_case、confidence
-- `bear_r1`/`bear_r2` → `--step bear_debate`：必须包含 debate_text、core_logic、bear_case、confidence
-- `risk_aggressive/risk_conservative/risk_neutral` → `--step risk_aggressive/risk_conservative/risk_neutral`：必须包含 debate_text、stance、position_size、key_points
-
-验证失败时附带 hint 重试，最多 2 次。超过上限使用默认值。
 
 ### 日志
 
 分析开始前，设置日志环境变量：
-
 ```bash
 export TRADINGAGENTS_LOG_FILE="{baseDir}/scripts/logs/{股票代码}_{YYYYMMDD}_{HHMMSS}.log"
 mkdir -p {baseDir}/scripts/logs
@@ -84,54 +54,41 @@ mkdir -p {baseDir}/scripts/logs
 ## 工作流程
 
 ```
-Step 1A: 获取原始文本（截图 → OCR / 文字 → 直接使用）
-Step 1B: 结构化提取 LLM → validate → stock_data JSON
-Step 2:  web_search 获取新闻 → news_data
-───── 阶段一：四位分析师报告 ─────
-Step 3:  技术/市场分析师 LLM → validate → tech_analyst
-Step 4:  基本面分析师 LLM → validate → fundamentals_analyst
-Step 5:  新闻分析师 LLM → validate → news_analyst
-Step 6:  社交媒体/情绪分析师 LLM → validate → social_analyst
+Step 1: 获取原始文本 + 结构化提取 → stock_data JSON
+Step 2: web_search + web_fetch 获取新闻 → news_data
+───── 阶段一：四位分析师报告（1次LLM调用）─────
+Step 3: 四位分析师综合分析 LLM → tech/fundamentals/news/social
 ───── 阶段二：多空辩论（2轮）─────
-Step 7:  看多研究员 Round 1 LLM → validate → bull_r1
-Step 8:  看空研究员 Round 1 LLM → validate → bear_r1
-Step 9:  看多研究员 Round 2 LLM → validate → bull_r2（回应bear_r1）
-Step 10: 看空研究员 Round 2 LLM → validate → bear_r2（回应bull_r2）
-───── 阶段三：研究管理者裁决 ─────
-Step 11: 研究管理者 LLM → validate → manager_decision
-───── 阶段四：交易员 ─────
-Step 12: 交易员 LLM → validate → trading_plan
-───── 阶段五：风控三方辩论 ─────
-Step 13: 激进型风控分析师 LLM → validate → risk_aggressive
-Step 14: 保守型风控分析师 LLM → validate → risk_conservative
-Step 15: 中立型风控分析师 LLM → validate → risk_neutral
-───── 阶段六：最终决策 ─────
-Step 16: 投资组合经理 LLM → validate → final_decision
-───── 阶段七：报告生成 ─────
-Step 17: 组装 JSON → 生成 PDF
+Step 4: 看多研究员 Round 1 + 看空研究员 Round 1
+Step 5: 看多研究员 Round 2 + 看空研究员 Round 2
+───── 阶段三：研究管理者裁决 + 交易员 ─────
+Step 6: 研究管理者裁决 LLM → manager_decision
+Step 7: 交易员计划 LLM → trading_plan
+───── 阶段四：风控三方辩论 ─────
+Step 8: 激进 + 保守 + 中立三方风控辩论
+───── 阶段五：最终决策 ─────
+Step 9: 投资组合经理（最终决策）LLM → final_decision（验证 rating）
+───── 阶段六：报告生成 ─────
+Step 10: 组装 JSON → 生成 PDF
 ```
 
 ---
 
-## Step 1A: 获取原始文本
+## Step 1: 获取原始文本 + 结构化提取
 
-根据用户输入类型，获取原始文本：
+根据用户输入类型获取原始文本：
 
 **情况 1：用户提供截图/图片**
-- 调用 OCR MCP tool（如 `image-ocr`）或 Agent 内建的图片识别能力
+- 使用 Agent 内建的图片识别能力读取文字
 - 将识别结果作为原始文本
 
 **情况 2：用户提供文字描述**
 - 直接使用用户提供的文字作为原始文本
 
 **情况 3：用户只提供股票代码/名称**
-- 将股票代码和名称作为原始文本，后续步骤会通过 web_search 补充数据
+- 将股票代码和名称作为原始文本，后续步骤通过 web_search 补充数据
 
----
-
-## Step 1B: 结构化数据提取
-
-**LLM 调用：**
+**LLM 调用：结构化数据提取**
 - system_prompt:
   ```
   你是股票数据提取专家。从用户提供的文本（可能来自截图OCR、交易软件、财报等）中，
@@ -169,120 +126,69 @@ Step 17: 组装 JSON → 生成 PDF
   }
   ```
 
-**验证：**
-```bash
-echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step step1b --stock-code {股票代码} --attempt 1
-```
-
 ---
 
 ## Step 2: 获取新闻数据
 
-使用 web_search 工具搜索该股票的最新新闻。搜索查询：
-1. `{股票名称} 最新消息 2026`
-2. `{股票代码} 研报 评级`
-3. `{行业关键词} 行业动态`
+使用 web_search 工具搜索该股票的最新新闻，**至少搜索 3 个查询**：
+1. `{股票名称} {股票代码} 最新消息 2026`
+2. `{股票代码} stock news latest`
+3. `{股票名称} 研报 评级`
+
+**对每条搜索结果**：调用 web_fetch 获取正文摘要（前 200 字）。
 
 将搜索结果整理为 JSON 数组：
 ```json
 {
   "news_list": [
-    {"title": "新闻标题", "date": "日期", "source": "来源", "summary": "摘要", "sentiment": "偏多/中性/偏空"},
+    {"title": "新闻标题", "date": "日期", "source": "来源", "summary": "至少50字的摘要", "sentiment": "偏多/中性/偏空", "url": "原文链接"},
     ...
   ]
 }
 ```
 
+**关键约束**：
+- `news_list` 数组**至少包含 3 条新闻**，不足则追加搜索
+- `summary` 字段不得为空，最少 50 字
+- 如果实在搜不到，设置 `news_list` 为空数组但 `sentiment` 设为 "暂无数据"
+
 ---
 
-## Step 3: 技术/市场分析师
+## Step 3: 四位分析师综合分析（1次LLM调用）
 
 **LLM 调用：**
-- system_prompt: 读取 `references/tech_prompt.md`
+- system_prompt: 读取 `references/combined_analysts_prompt.md`
 - user_message:
   ```
-  请分析以下股票的技术面：
+  请对以下股票进行四维度综合分析：
 
-  {stock_data JSON（Step 1B 结果）}
+  股票数据：
+  {stock_data JSON（Step 1 结果）}
 
-  请根据已有的技术指标数据，选择最相关的指标进行深度分析，以纯 JSON 格式返回。
+  近期新闻：
+  {news_data JSON（Step 2 结果）}
+
+  请同时从技术面、基本面、新闻面、情绪面四个角度深度分析，以纯 JSON 格式返回。
   ```
 
-**验证：**
+LLM 将一次性返回包含 `tech_analyst`、`fundamentals_analyst`、`news_analyst`、`social_analyst` 四个对象的 JSON。
+
+**如果输出异常**（空、非 JSON、缺少某个分析师），对缺失的分析师使用默认值：
 ```bash
-echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step tech --stock-code {股票代码} --attempt 1
+python3 {baseDir}/scripts/validate_step.py --step tech --default
+python3 {baseDir}/scripts/validate_step.py --step fundamentals --default
+python3 {baseDir}/scripts/validate_step.py --step news --default
+python3 {baseDir}/scripts/validate_step.py --step social --default
 ```
 
 ---
 
-## Step 4: 基本面分析师
+## Step 4: 多空辩论 Round 1
 
-**LLM 调用：**
-- system_prompt: 读取 `references/fundamentals_prompt.md`
-- user_message:
-  ```
-  请分析以下公司的基本面：
+**一次消息内连续完成两个 LLM 调用：**
 
-  {stock_data JSON}
+### 4A: 看多研究员 Round 1
 
-  补充新闻信息：
-  {news_data JSON 中与财报/业绩相关的新闻}
-
-  请进行全面的基本面分析，以纯 JSON 格式返回。
-  ```
-
-**验证：**
-```bash
-echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step fundamentals --stock-code {股票代码} --attempt 1
-```
-
----
-
-## Step 5: 新闻分析师
-
-**LLM 调用：**
-- system_prompt: 读取 `references/news_prompt.md`
-- user_message:
-  ```
-  请分析以下股票的新闻面：
-
-  股票信息：{stock_data JSON}
-  近期新闻：{news_data JSON}
-
-  请综合分析新闻对该股票的影响，以纯 JSON 格式返回。
-  ```
-
-**验证：**
-```bash
-echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step news --stock-code {股票代码} --attempt 1
-```
-
----
-
-## Step 6: 社交媒体/情绪分析师
-
-**LLM 调用：**
-- system_prompt: 读取 `references/social_prompt.md`
-- user_message:
-  ```
-  请分析以下股票的市场情绪：
-
-  股票信息：{stock_data JSON}
-  近期新闻（含情绪标签）：{news_data JSON}
-
-  请综合分析社交媒体舆情和公众情绪，以纯 JSON 格式返回。
-  ```
-
-**验证：**
-```bash
-echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step social --stock-code {股票代码} --attempt 1
-```
-
----
-
-## Step 7: 看多研究员 Round 1
-
-**LLM 调用：**
 - system_prompt: 读取 `references/bull_prompt.md`
 - user_message:
   ```
@@ -303,13 +209,8 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step social --
   这是第一轮辩论，尚无看空方论点。请基于以上分析报告构建你的看多论证。
   ```
 
-用 `validate_step.py --step bull_debate` 验证。验证失败带 hint 重试，最多 2 次。
+### 4B: 看空研究员 Round 1
 
----
-
-## Step 8: 看空研究员 Round 1
-
-**LLM 调用：**
 - system_prompt: 读取 `references/bear_prompt.md`
 - user_message:
   ```
@@ -328,63 +229,47 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step social --
   {social_analyst 的 report 字段}
 
   看多研究员的论点：
-  {bull_r1 文本}
+  {bull_r1 的 debate_text}
 
   这是第一轮辩论。请基于分析报告构建你的看空论证，并回应看多方的观点。
   ```
 
-用 `validate_step.py --step bear_debate` 验证。验证失败带 hint 重试，最多 2 次。
-
 ---
 
-## Step 9: 看多研究员 Round 2
+## Step 5: 多空辩论 Round 2
 
-**LLM 调用：**
+### 5A: 看多研究员 Round 2
+
 - system_prompt: 读取 `references/bull_prompt.md`
 - user_message:
   ```
   这是第二轮辩论。请回应看空研究员的论点：
 
-  四份分析师报告（同上，简要引用关键数据即可）。
-
   辩论历史：
-  看多 Round 1：{bull_r1}
-  看空 Round 1：{bear_r1}
+  看多 Round 1：{bull_r1 的 debate_text}
+  看空 Round 1：{bear_r1 的 debate_text}
 
-  看空研究员上一轮论点：
-  {bear_r1 文本}
-
-  请针对看空方的每个具体论点进行回应和反驳，展示为什么看多立场更有说服力。
+  请针对看空方的每个具体论点进行回应和反驳。
   ```
 
-用 `validate_step.py --step bull_debate` 验证。
+### 5B: 看空研究员 Round 2
 
----
-
-## Step 10: 看空研究员 Round 2
-
-**LLM 调用：**
 - system_prompt: 读取 `references/bear_prompt.md`
 - user_message:
   ```
   这是第二轮辩论。请回应看多研究员的论点：
 
   辩论历史：
-  看多 Round 1：{bull_r1}
-  看空 Round 1：{bear_r1}
-  看多 Round 2：{bull_r2}
+  看多 Round 1：{bull_r1 的 debate_text}
+  看空 Round 1：{bear_r1 的 debate_text}
+  看多 Round 2：{bull_r2 的 debate_text}
 
-  看多研究员上一轮论点：
-  {bull_r2 文本}
-
-  请针对看多方的每个具体论点进行回应和反驳，展示为什么看空立场更有说服力。
+  请针对看多方的每个具体论点进行回应和反驳。
   ```
-
-用 `validate_step.py --step bear_debate` 验证。
 
 ---
 
-## Step 11: 研究管理者裁决
+## Step 6: 研究管理者裁决
 
 **LLM 调用：**
 - system_prompt: 读取 `references/manager_prompt.md`
@@ -394,28 +279,23 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step social --
 
   完整辩论记录：
   === 看多研究员 Round 1 ===
-  {bull_r1}
+  {bull_r1 的 debate_text}
 
   === 看空研究员 Round 1 ===
-  {bear_r1}
+  {bear_r1 的 debate_text}
 
   === 看多研究员 Round 2 ===
-  {bull_r2}
+  {bull_r2 的 debate_text}
 
   === 看空研究员 Round 2 ===
-  {bear_r2}
+  {bear_r2 的 debate_text}
 
   请做出明确的决策（买入/卖出/持有），并制定详细的投资计划。以纯 JSON 格式返回。
   ```
 
-**验证：**
-```bash
-echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step manager --stock-code {股票代码} --attempt 1
-```
-
 ---
 
-## Step 12: 交易员计划
+## Step 7: 交易员计划
 
 **LLM 调用：**
 - system_prompt: 读取 `references/trader_prompt.md`
@@ -430,16 +310,14 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step manager -
   所有价格必须是具体数字。
   ```
 
-**验证：**
-```bash
-echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step trader --stock-code {股票代码} --attempt 1
-```
-
 ---
 
-## Step 13: 激进型风控分析师
+## Step 8: 风控三方辩论
 
-**LLM 调用：**
+**连续完成三个 LLM 调用：**
+
+### 8A: 激进型风控分析师
+
 - system_prompt: 读取 `references/risk_aggressive_prompt.md`
 - user_message:
   ```
@@ -453,16 +331,10 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step trader --
   情绪摘要：{social_analyst 的 key_points}
 
   请从激进型风险分析师的角度评估此交易计划。
-  这是第一位发言，尚无其他风控分析师的观点。
   ```
 
-用 `validate_step.py --step risk_aggressive` 验证。验证失败带 hint 重试，最多 2 次。
+### 8B: 保守型风控分析师
 
----
-
-## Step 14: 保守型风控分析师
-
-**LLM 调用：**
 - system_prompt: 读取 `references/risk_conservative_prompt.md`
 - user_message:
   ```
@@ -472,18 +344,13 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step trader --
   参考数据（同上摘要）。
 
   激进型分析师的观点：
-  {risk_aggressive 文本}
+  {risk_aggressive 的 debate_text}
 
   请从保守型风险分析师的角度评估此交易计划，并回应激进派的观点。
   ```
 
-用 `validate_step.py --step risk_conservative` 验证。验证失败带 hint 重试，最多 2 次。
+### 8C: 中立型风控分析师
 
----
-
-## Step 15: 中立型风控分析师
-
-**LLM 调用：**
 - system_prompt: 读取 `references/risk_neutral_prompt.md`
 - user_message:
   ```
@@ -493,19 +360,17 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step trader --
   参考数据（同上摘要）。
 
   激进型分析师的观点：
-  {risk_aggressive 文本}
+  {risk_aggressive 的 debate_text}
 
   保守型分析师的观点：
-  {risk_conservative 文本}
+  {risk_conservative 的 debate_text}
 
   请从中立型风险分析师的角度评估此交易计划，平衡激进派和保守派的观点。
   ```
 
-用 `validate_step.py --step risk_neutral` 验证。验证失败带 hint 重试，最多 2 次。
-
 ---
 
-## Step 16: 投资组合经理（最终决策）
+## Step 9: 投资组合经理（最终决策）
 
 **LLM 调用：**
 - system_prompt: 读取 `references/risk_manager_prompt.md`
@@ -524,25 +389,32 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step trader --
   === 风控分析师辩论记录 ===
 
   激进型分析师：
-  {risk_aggressive}
+  {risk_aggressive 的 debate_text}
 
   保守型分析师：
-  {risk_conservative}
+  {risk_conservative 的 debate_text}
 
   中立型分析师：
-  {risk_neutral}
+  {risk_neutral 的 debate_text}
 
   请使用五级评级（买入/增持/持有/减持/卖出），以纯 JSON 格式返回最终决策。
   ```
 
-**验证：**
+**此步必须验证**：
 ```bash
 echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step portfolio_manager --stock-code {股票代码} --attempt 1
 ```
 
+- `exit 0` → 通过，继续
+- `exit 1` → 将 hint 追加到 prompt 重新调用 LLM，最多重试 **3 次**
+- 超过 3 次 → 使用默认值：
+  ```bash
+  python3 {baseDir}/scripts/validate_step.py --step portfolio_manager --default
+  ```
+
 ---
 
-## Step 17: 生成 PDF 报告
+## Step 10: 生成 PDF 报告
 
 将所有结果组装为完整 JSON（格式详见 `references/data_schema.md`）：
 
@@ -553,35 +425,36 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step portfolio
   "current_price": "{当前价格}",
   "timestamp": "{ISO 8601 时间戳}",
   "parallel_analysis": {
-    "tech_analyst": "{Step 3 结果}",
-    "fundamentals_analyst": "{Step 4 结果}",
-    "news_analyst": "{Step 5 结果}",
-    "social_analyst": "{Step 6 结果}"
+    "tech_analyst": "{Step 3 中的 tech_analyst}",
+    "fundamentals_analyst": "{Step 3 中的 fundamentals_analyst}",
+    "news_analyst": "{Step 3 中的 news_analyst}",
+    "social_analyst": "{Step 3 中的 social_analyst}"
   },
+  "news_data": "{Step 2 的 news_data，含 news_list}",
   "investment_debate": {
-    "bull_r1": "{Step 7 文本}",
-    "bear_r1": "{Step 8 文本}",
-    "bull_r2": "{Step 9 文本}",
-    "bear_r2": "{Step 10 文本}"
+    "bull_r1": "{Step 4A 结果}",
+    "bear_r1": "{Step 4B 结果}",
+    "bull_r2": "{Step 5A 结果}",
+    "bear_r2": "{Step 5B 结果}"
   },
-  "manager_decision": "{Step 11 结果}",
-  "trading_plan": "{Step 12 结果}",
+  "manager_decision": "{Step 6 结果}",
+  "trading_plan": "{Step 7 结果}",
   "risk_debate": {
-    "aggressive": "{Step 13 文本}",
-    "conservative": "{Step 14 文本}",
-    "neutral": "{Step 15 文本}"
+    "aggressive": "{Step 8A 结果}",
+    "conservative": "{Step 8B 结果}",
+    "neutral": "{Step 8C 结果}"
   },
-  "final_decision": "{Step 16 结果}"
+  "final_decision": "{Step 9 结果}"
 }
 ```
 
-调用脚本生成 PDF：
+**生成 PDF：**
 
 ```bash
-echo '<完整JSON>' | python3 {baseDir}/scripts/normalize_data.py | python3 {baseDir}/scripts/generate_report.py --stdin
+echo '<完整JSON>' | python3 {baseDir}/scripts/normalize_data.py | python3 {baseDir}/scripts/generate_report.py --stdin --output-dir {用户工作目录}
 ```
 
-脚本输出 PDF 文件路径。
+如果命令失败，检查 JSON 完整性，补充缺失字段后重试一次。
 
 **重要：必须将 PDF 文件直接发送给用户，不要只显示文件路径。** 使用文件发送能力将 PDF 作为附件发给用户。
 
@@ -595,21 +468,18 @@ echo '<完整JSON>' | python3 {baseDir}/scripts/normalize_data.py | python3 {bas
 
 ## 输出文件
 
-PDF 保存到 `{baseDir}/scripts/reports/`，文件名格式：`{股票代码}_{YYYYMMDD}_{HHMMSS}.pdf`
+PDF 默认保存到 `{baseDir}/scripts/reports/`，文件名格式：`{股票代码}_{YYYYMMDD}_{HHMMSS}.pdf`
+
+可通过 `--output-dir` 指定输出到用户工作目录。
 
 ---
 
 ## 调试方法
 
-### CLI 直接触发
-```bash
-openclaw agent --message "分析一下 PDD" --verbose on --json
-```
-
 ### 单步验证工具
 ```bash
 # 测试某个 LLM 输出是否通过验证
-echo '{"report":"test","key_points":["p1"],"indicators":{}}' | python3 {baseDir}/scripts/validate_step.py --step tech
+echo '{"rating":"买入","executive_summary":"摘要","investment_thesis":"论文","risk_level":"中"}' | python3 {baseDir}/scripts/validate_step.py --step portfolio_manager
 
 # 获取某步骤的默认值
 python3 {baseDir}/scripts/validate_step.py --step tech --default

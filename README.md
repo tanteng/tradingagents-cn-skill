@@ -47,15 +47,15 @@
 
 | 特性 | 说明 |
 |------|------|
-| **4 位专业分析师** | 技术/市场、基本面、新闻、社交媒体/情绪 |
+| **4 位专业分析师** | 技术/市场、基本面、新闻、社交媒体/情绪（**1 次 LLM 调用**） |
 | **2 轮多空辩论** | Bull/Bear 互相引用对方论点进行对话式辩论 |
 | **研究管理者裁决** | 辩论裁判，"不要默认 Hold"，必须给出明确立场 |
 | **交易员计划** | 具体数字的买入价/目标价/止损价 |
 | **风控三方辩论** | 激进/保守/中立三种风险偏好独立发言互相辩驳 |
 | **五级评级** | 买入 / 增持 / 持有 / 减持 / 卖出 |
-| **中文 PDF 报告** | 完整的专业分析报告 |
-| **自动重试** | LLM 输出验证失败时自动重试，带错误提示 |
-| **完善日志** | 每步输入/输出/验证结果均记录到日志文件 |
+| **中文 PDF 报告** | Chrome headless 生成，无乱码 |
+| **极简验证** | 仅最终评级验证，其余步骤信任 LLM 输出 |
+| **全自动执行** | 无需人工干预，遇错自动重试+默认值兜底 |
 
 ## 文件结构
 
@@ -87,34 +87,25 @@ tradingagents-cn-skill/
 │   └── reports/                      # 生成的 PDF 报告
 ```
 
-## 17 步工作流程
+## 10 步工作流程（v3.0）
 
 ```
-Step 1A:  获取原始文本（截图OCR / 文字 / 股票代码）
-Step 1B:  结构化数据提取 → validate → stock_data
-Step 2:   web_search 获取新闻 → news_data
-───── 阶段一：四位分析师报告 ─────
-Step 3:   技术/市场分析师 → validate → tech_analyst
-Step 4:   基本面分析师 → validate → fundamentals_analyst
-Step 5:   新闻分析师 → validate → news_analyst
-Step 6:   社交媒体/情绪分析师 → validate → social_analyst
+Step 1:   获取原始文本 + 结构化数据提取 → stock_data
+Step 2:   web_search + web_fetch 获取新闻 → news_data
+───── 阶段一：四位分析师报告（1次LLM调用）─────
+Step 3:   技术/基本面/新闻/情绪四合一分析 → parallel_analysis
 ───── 阶段二：多空辩论（2轮）─────
-Step 7:   看多研究员 Round 1 → bull_r1（纯文本）
-Step 8:   看空研究员 Round 1 → bear_r1（纯文本）
-Step 9:   看多研究员 Round 2 → bull_r2（回应bear_r1）
-Step 10:  看空研究员 Round 2 → bear_r2（回应bull_r2）
-───── 阶段三：研究管理者裁决 ─────
-Step 11:  研究管理者 → validate → manager_decision
-───── 阶段四：交易员 ─────
-Step 12:  交易员 → validate → trading_plan
-───── 阶段五：风控三方辩论 ─────
-Step 13:  激进型风控分析师 → risk_aggressive（纯文本）
-Step 14:  保守型风控分析师 → risk_conservative（纯文本）
-Step 15:  中立型风控分析师 → risk_neutral（纯文本）
-───── 阶段六：最终决策 ─────
-Step 16:  投资组合经理 → validate → final_decision（五级评级）
-───── 阶段七：报告生成 ─────
-Step 17:  组装 JSON → 生成 PDF
+Step 4:   看多 R1 + 看空 R1
+Step 5:   看多 R2 + 看空 R2
+───── 阶段三：研究管理者裁决 + 交易员 ─────
+Step 6:   研究管理者裁决 → manager_decision
+Step 7:   交易员计划 → trading_plan
+───── 阶段四：风控三方辩论 ─────
+Step 8:   激进 + 保守 + 中立风控辩论
+───── 阶段五：最终决策 ─────
+Step 9:   投资组合经理五级评级（唯一验证点）→ final_decision
+───── 阶段六：报告生成 ─────
+Step 10:  组装 JSON → Chrome headless 生成 PDF
 ```
 
 ## 与 TradingAgents 原版的对比

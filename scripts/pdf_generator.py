@@ -742,19 +742,62 @@ class ReportGenerator:
         return html
 
     def _html_to_pdf(self, html_content: str, output_path: Path):
-        """将 HTML 转换为 PDF"""
+        """将 HTML 转换为 PDF。优先级：Chrome headless > weasyprint > wkhtmltopdf > 保存 HTML"""
+        import subprocess
+        import tempfile
+
+        # 1. 优先使用 Chrome headless（字体渲染最可靠，无乱码问题）
+        chrome_paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chromium",
+        ]
+        for chrome in chrome_paths:
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode='w', suffix='.html', delete=False, encoding='utf-8'
+                ) as f:
+                    f.write(html_content)
+                    temp_html = f.name
+
+                result = subprocess.run(
+                    [
+                        chrome, "--headless", "--disable-gpu", "--no-sandbox",
+                        "--run-all-compositor-stages-before-draw",
+                        f"--print-to-pdf={output_path}",
+                        "--print-to-pdf-no-header",
+                        "--no-pdf-header-footer",
+                        f"file://{temp_html}",
+                    ],
+                    capture_output=True,
+                    timeout=60,
+                )
+                os.unlink(temp_html)
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    return
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                # 清理临时文件
+                try:
+                    os.unlink(temp_html)
+                except (NameError, OSError):
+                    pass
+                continue
+
+        # 2. Fallback: weasyprint
         try:
             from weasyprint import HTML
             HTML(string=html_content).write_pdf(output_path)
             return
-        except ImportError:
+        except (ImportError, Exception):
             pass
 
+        # 3. Fallback: wkhtmltopdf
         try:
-            import subprocess
-            import tempfile
-
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+            with tempfile.NamedTemporaryFile(
+                mode='w', suffix='.html', delete=False, encoding='utf-8'
+            ) as f:
                 f.write(html_content)
                 temp_html = f.name
 
@@ -762,18 +805,22 @@ class ReportGenerator:
                 ['wkhtmltopdf', '--page-size', 'A4', '--margin-top', '15mm',
                  '--margin-bottom', '15mm', '--margin-left', '12mm', '--margin-right', '12mm',
                  temp_html, str(output_path)],
-                check=True
+                check=True,
             )
             os.unlink(temp_html)
             return
-        except (ImportError, subprocess.CalledProcessError, FileNotFoundError):
-            pass
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            try:
+                os.unlink(temp_html)
+            except (NameError, OSError):
+                pass
 
+        # 4. 最终 fallback: 保存 HTML
         html_path = output_path.with_suffix('.html')
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
         raise RuntimeError(
-            f"PDF 生成失败（weasyprint 和 wkhtmltopdf 均不可用）。"
+            f"PDF 生成失败（Chrome/weasyprint/wkhtmltopdf 均不可用）。"
             f"HTML 报告已保存至: {html_path}"
         )
 
