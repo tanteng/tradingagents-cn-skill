@@ -129,6 +129,11 @@ class ReportGenerator:
 
         # 1. 修复新闻摘要
         news_analyst = result.get("parallel_analysis", {}).get("news_analyst", {})
+        # schema: news_list 在顶层 news_data 下，注入到 news_analyst
+        if not news_analyst.get("news_list"):
+            _nd = result.get("news_data", {})
+            if isinstance(_nd, dict) and _nd.get("news_list"):
+                news_analyst["news_list"] = _nd["news_list"]
         news_list = news_analyst.get("news_list", [])
         for news in news_list:
             summary = (news.get("summary") or "").strip()
@@ -341,16 +346,10 @@ class ReportGenerator:
 
         # 生成基本面分析 HTML
         fund_analyst_data = parallel.get("fundamentals_analyst", {})
-        fa = fund_analyst_data.get("fundamentals_analysis", {})
-        # v3 兼容：如果 fundamentals_analysis 是字符串，尝试从 financials 获取结构化数据
-        if isinstance(fa, str):
-            fa = fund_analyst_data.get("financials", {}) or {}
-        # 合并 financials 到 fa 中
-        _financials = fund_analyst_data.get("financials", {})
-        if isinstance(_financials, dict) and isinstance(fa, dict):
-            for fk, fv in _financials.items():
-                if fk not in fa:
-                    fa[fk] = fv
+        # schema: financials 是确定字段（pe/pb/roe/gross_margin/net_margin/revenue_growth/debt_ratio）
+        fa = fund_analyst_data.get("financials", {})
+        if not isinstance(fa, dict):
+            fa = {}
         # 从 report 文本提取估值数据填充 N/A 字段
         _rpt = fund_analyst_data.get("report", "")
         if isinstance(_rpt, str) and len(_rpt) > 50:
