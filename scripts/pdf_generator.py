@@ -206,9 +206,9 @@ class ReportGenerator:
         """渲染多头/空头分析师观点，优先从 investment_debate 读取"""
         inv = result.get("investment_debate", {})
         if side == "bull":
-            texts = [inv.get("bull_r1", ""), inv.get("bull_r2", "")]
+            texts = [self._extract_debate_text(inv.get("bull_r1", "")), self._extract_debate_text(inv.get("bull_r2", ""))]
         else:
-            texts = [inv.get("bear_r1", ""), inv.get("bear_r2", "")]
+            texts = [self._extract_debate_text(inv.get("bear_r1", "")), self._extract_debate_text(inv.get("bear_r2", ""))]
         
         # 如果辩论数据有内容，直接渲染
         combined = "\n\n".join(t for t in texts if t)
@@ -223,6 +223,59 @@ class ReportGenerator:
             if analysis:
                 return "".join(f"<li>{self._render_markdown(p)}</li>" for p in analysis)
         return "<p>待分析</p>"
+
+
+    @staticmethod
+    def _extract_debate_text(raw):
+        """从辩论输出中提取可渲染的文本。
+        
+        LLM 输出可能是：
+        1. 纯字符串
+        2. dict 带 debate_text 字段
+        3. ```json 包裹的 JSON 字符串
+        """
+        if not raw:
+            return ""
+        if isinstance(raw, dict):
+            return raw.get("debate_text", "") or raw.get("full_text", "") or str(raw)
+        if not isinstance(raw, str):
+            return str(raw)
+        
+        text = raw.strip()
+        # 去掉 ```json ... ``` 包裹
+        if text.startswith("```"):
+            lines = text.split("\n")
+            if lines[0].strip().startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        
+        # 尝试 JSON 解析提取 debate_text
+        try:
+            import json as _json
+            obj = _json.loads(text)
+            if isinstance(obj, dict):
+                return obj.get("debate_text", "") or obj.get("full_text", "") or text
+        except (ValueError, TypeError):
+            pass
+        
+        # 如果看起来像 JSON 但解析失败，用正则提取 debate_text 值
+        if '"debate_text"' in text[:100]:
+            m = re.search(r'"debate_text"\s*:\s*"', text)
+            if m:
+                start = m.end()
+                # 找到匹配的结束引号（跳过转义的）
+                i = start
+                while i < len(text):
+                    if text[i] == '"' and text[i-1:i] != '\\':
+                        break
+                    i += 1
+                extracted = text[start:i]
+                extracted = extracted.replace('\\n', '\n').replace('\\"', '"')
+                return extracted
+        
+        return text
 
     def _generate_html(self, result: Dict[str, Any]) -> str:
         """生成 HTML 格式的报告"""
@@ -435,9 +488,9 @@ class ReportGenerator:
         debate_rounds = []
         _inv_debate = result.get("investment_debate", {})
         if _inv_debate.get("bull_r1") or _inv_debate.get("bear_r1"):
-            debate_rounds = [{"bull": _inv_debate.get("bull_r1", ""), "bear": _inv_debate.get("bear_r1", "")}]
+            debate_rounds = [{"bull": self._extract_debate_text(_inv_debate.get("bull_r1", "")), "bear": self._extract_debate_text(_inv_debate.get("bear_r1", ""))}]
             if _inv_debate.get("bull_r2") or _inv_debate.get("bear_r2"):
-                debate_rounds.append({"bull": _inv_debate.get("bull_r2", ""), "bear": _inv_debate.get("bear_r2", "")})
+                debate_rounds.append({"bull": self._extract_debate_text(_inv_debate.get("bull_r2", "")), "bear": self._extract_debate_text(_inv_debate.get("bear_r2", ""))})
         if not debate_rounds:
             debate_rounds = result.get("debate", {}).get("rounds", [])
         # v3 兼容：如果 rounds 中的 bull/bear 是纯文本字符串，直接渲染
@@ -751,19 +804,19 @@ class ReportGenerator:
             <div style="margin-bottom:15px;">
                 <h4 style="color:#c62828;">🔴 激进型分析师</h4>
                 <div style="font-size:11px;line-height:1.6;background:#fff5f5;padding:12px;border-radius:8px;border-left:3px solid #c62828;">
-                    {self._render_markdown(risk.get("aggressive", {}).get("full_text", "") if isinstance(risk.get("aggressive"), dict) else str(risk.get("aggressive", "")))}
+                    {self._render_markdown(self._extract_debate_text(risk.get("aggressive", "")))}
                 </div>
             </div>
             <div style="margin-bottom:15px;">
                 <h4 style="color:#2e7d32;">🟢 保守型分析师</h4>
                 <div style="font-size:11px;line-height:1.6;background:#f5fff5;padding:12px;border-radius:8px;border-left:3px solid #2e7d32;">
-                    {self._render_markdown(risk.get("conservative", {}).get("full_text", "") if isinstance(risk.get("conservative"), dict) else str(risk.get("conservative", "")))}
+                    {self._render_markdown(self._extract_debate_text(risk.get("conservative", "")))}
                 </div>
             </div>
             <div style="margin-bottom:15px;">
                 <h4 style="color:#f57c00;">🟡 中立型分析师</h4>
                 <div style="font-size:11px;line-height:1.6;background:#fffde7;padding:12px;border-radius:8px;border-left:3px solid #f57c00;">
-                    {self._render_markdown(risk.get("neutral", {}).get("full_text", "") or risk.get("moderate", {}).get("full_text", "") if isinstance(risk.get("neutral", risk.get("moderate")), dict) else str(risk.get("neutral", risk.get("moderate", ""))))}
+                    {self._render_markdown(self._extract_debate_text(risk.get("neutral", "") or risk.get("moderate", "")))}
                 </div>
             </div>
         </div>
