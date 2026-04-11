@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from pdf_generator import ReportGenerator
+from normalize_data import normalize
 
 
 def main():
@@ -38,6 +39,7 @@ def main():
         sys.exit(1)
 
     generator = ReportGenerator()
+    data = normalize(data)
     pdf_path = generator.generate(data, output_dir=args.output_dir)
     print(pdf_path)
 

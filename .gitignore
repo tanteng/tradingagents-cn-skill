@@ -9,3 +9,6 @@ scripts/run_analysis_steps.py
 scripts/generate_all_results.py
 scripts/generate_pdf.py
 references_backup_20260411/
+scripts/run_*.py
+scripts/analyst_multi.py
+scripts/run_net_llm.py

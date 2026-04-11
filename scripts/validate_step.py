@@ -45,6 +45,11 @@ RETRY_LIMITS = {
     "manager": 3,
     "trader": 3,
     "portfolio_manager": 3,
+    "bull_debate": 2,
+    "bear_debate": 2,
+    "risk_aggressive": 2,
+    "risk_conservative": 2,
+    "risk_neutral": 2,
 }
 
 # 各步骤必填字段定义（支持嵌套字段用 . 分隔）
@@ -57,6 +62,11 @@ REQUIRED_FIELDS = {
     "manager": ["recommendation", "rationale", "investment_plan"],
     "trader": ["decision"],
     "portfolio_manager": ["rating", "executive_summary", "investment_thesis", "risk_level"],
+    "bull_debate": ["debate_text", "core_logic", "bull_case", "confidence"],
+    "bear_debate": ["debate_text", "core_logic", "bear_case", "confidence"],
+    "risk_aggressive": ["debate_text", "stance", "position_size", "key_points"],
+    "risk_conservative": ["debate_text", "stance", "position_size", "key_points"],
+    "risk_neutral": ["debate_text", "stance", "position_size", "key_points"],
     # 保留旧步骤名兼容
     "parse_input": ["stock_code", "stock_name"],
     "bull_analyst": ["bull_detail.core_logic", "bull_detail.bull_case"],
@@ -80,6 +90,11 @@ FIELD_HINTS = {
     "manager": '输出必须包含 recommendation（买入/卖出/持有）、rationale（决策理由）和 investment_plan（投资计划）字段',
     "trader": '输出必须包含 decision（买入/卖出/观望）字段，买入时还需 buy_price、target_price、stop_loss 数字字段',
     "portfolio_manager": '输出必须包含 rating（买入/增持/持有/减持/卖出五级之一）、executive_summary、investment_thesis 和 risk_level 字段',
+    "bull_debate": '输出必须是JSON，包含 debate_text（看多论述500字以上）、core_logic（核心逻辑1-2句话）、bull_case（3-5个论点数组）、confidence（0-1浮点数）',
+    "bear_debate": '输出必须是JSON，包含 debate_text（看空论述500字以上）、core_logic（核心逻辑1-2句话）、bear_case（3-5个论点数组）、confidence（0-1浮点数）',
+    "risk_aggressive": '输出必须是JSON，包含 debate_text（激进派论述）、stance（立场）、position_size（仓位百分比如30%-40%）、key_points（2-4个要点数组）',
+    "risk_conservative": '输出必须是JSON，包含 debate_text（保守派论述）、stance（立场）、position_size（仓位百分比如5%-10%）、key_points（2-4个要点数组）',
+    "risk_neutral": '输出必须是JSON，包含 debate_text（中立派论述）、stance（立场）、position_size（仓位百分比如15%-20%）、key_points（2-4个要点数组）',
     # 保留旧提示兼容
     "parse_input": '输出必须包含 stock_code（股票代码）和 stock_name（股票名称）字符串字段',
     "bull_analyst": '输出必须包含 bull_detail 对象，其中 core_logic 为字符串，bull_case 为非空数组',
