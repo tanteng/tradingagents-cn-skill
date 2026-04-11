@@ -201,6 +201,29 @@ class ReportGenerator:
             # 非数字字符串（如 "现行价格"）直接返回
             return str(price) if str(price).strip() else fallback
 
+
+    def _render_bull_bear_section(self, result, side):
+        """渲染多头/空头分析师观点，优先从 investment_debate 读取"""
+        inv = result.get("investment_debate", {})
+        if side == "bull":
+            texts = [inv.get("bull_r1", ""), inv.get("bull_r2", "")]
+        else:
+            texts = [inv.get("bear_r1", ""), inv.get("bear_r2", "")]
+        
+        # 如果辩论数据有内容，直接渲染
+        combined = "\n\n".join(t for t in texts if t)
+        if combined:
+            return self._render_markdown(combined)
+        
+        # fallback: 从 parallel_analysis 的旧格式读
+        pa = result.get("parallel_analysis", {})
+        analyst = pa.get(f"{side}_analyst", {})
+        if isinstance(analyst, dict):
+            analysis = analyst.get("analysis", [])
+            if analysis:
+                return "".join(f"<li>{self._render_markdown(p)}</li>" for p in analysis)
+        return "<p>待分析</p>"
+
     def _generate_html(self, result: Dict[str, Any]) -> str:
         """生成 HTML 格式的报告"""
         stock_code = result["stock_code"]
@@ -409,7 +432,14 @@ class ReportGenerator:
 
         # 生成辩论 HTML
         debate_html = ""
-        debate_rounds = result.get("debate", {}).get("rounds", [])
+        debate_rounds = []
+        _inv_debate = result.get("investment_debate", {})
+        if _inv_debate.get("bull_r1") or _inv_debate.get("bear_r1"):
+            debate_rounds = [{"bull": _inv_debate.get("bull_r1", ""), "bear": _inv_debate.get("bear_r1", "")}]
+            if _inv_debate.get("bull_r2") or _inv_debate.get("bear_r2"):
+                debate_rounds.append({"bull": _inv_debate.get("bull_r2", ""), "bear": _inv_debate.get("bear_r2", "")})
+        if not debate_rounds:
+            debate_rounds = result.get("debate", {}).get("rounds", [])
         # v3 兼容：如果 rounds 中的 bull/bear 是纯文本字符串，直接渲染
         _has_text_debate = debate_rounds and isinstance(debate_rounds[0].get("bull", ""), str) and len(debate_rounds[0].get("bull", "")) > 50
         if _has_text_debate:
@@ -650,7 +680,7 @@ class ReportGenerator:
             <div class="analyst-card">
                 <h4>买入论证</h4>
                 <ul>
-                    {"".join(f"<li>{ReportGenerator._render_markdown(point)}</li>" for point in parallel.get("bull_analyst", {}).get("analysis", ["待分析"]))}
+                    {self._render_bull_bear_section(result, "bull")}
                 </ul>
             </div>
         </div>
@@ -661,7 +691,7 @@ class ReportGenerator:
             <div class="analyst-card">
                 <h4>卖出/观望论证</h4>
                 <ul>
-                    {"".join(f"<li>{ReportGenerator._render_markdown(point)}</li>" for point in parallel.get("bear_analyst", {}).get("analysis", ["待分析"]))}
+                    {self._render_bull_bear_section(result, "bear")}
                 </ul>
             </div>
         </div>
@@ -696,21 +726,21 @@ class ReportGenerator:
                 </tr>
                 <tr>
                     <td>{risk["aggressive"].get("position", "激进派")}</td>
-                    <td>{risk["aggressive"].get("position_size", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
-                    <td>{risk["aggressive"].get("target_return", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
-                    <td>{risk["aggressive"].get("stop_loss", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["aggressive"].get("position_size", "详见辩论") if isinstance(risk.get("aggressive"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["aggressive"].get("target_return", "详见辩论") if isinstance(risk.get("aggressive"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["aggressive"].get("stop_loss", "详见辩论") if isinstance(risk.get("aggressive"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
                 </tr>
                 <tr>
                     <td>{risk["neutral"].get("position", "中性派")}</td>
-                    <td>{risk["neutral"].get("position_size", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
-                    <td>{risk["neutral"].get("target_return", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
-                    <td>{risk["neutral"].get("stop_loss", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["neutral"].get("position_size", "详见辩论") if isinstance(risk.get("neutral"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["neutral"].get("target_return", "详见辩论") if isinstance(risk.get("neutral"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["neutral"].get("stop_loss", "详见辩论") if isinstance(risk.get("neutral"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
                 </tr>
                 <tr>
                     <td>{risk["conservative"].get("position", "保守派")}</td>
-                    <td>{risk["conservative"].get("position_size", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
-                    <td>{risk["conservative"].get("target_return", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
-                    <td>{risk["conservative"].get("stop_loss", "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["conservative"].get("position_size", "详见辩论") if isinstance(risk.get("conservative"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["conservative"].get("target_return", "详见辩论") if isinstance(risk.get("conservative"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
+                    <td>{(risk["conservative"].get("stop_loss", "详见辩论") if isinstance(risk.get("conservative"), dict) else "详见辩论") if not risk.get("_risk_debate_failed") else "详见辩论"}</td>
                 </tr>
             </table>
         </div>
