@@ -203,80 +203,34 @@ class ReportGenerator:
 
 
     def _render_bull_bear_section(self, result, side):
-        """渲染多头/空头分析师观点，优先从 investment_debate 读取"""
+        """按 schema 渲染多头/空头观点。
+        
+        schema: investment_debate.{side}_r{1,2} 是 dict，含 debate_text (string)。
+        """
         inv = result.get("investment_debate", {})
-        if side == "bull":
-            texts = [self._extract_debate_text(inv.get("bull_r1", "")), self._extract_debate_text(inv.get("bull_r2", ""))]
-        else:
-            texts = [self._extract_debate_text(inv.get("bear_r1", "")), self._extract_debate_text(inv.get("bear_r2", ""))]
+        r1 = self._extract_debate_text(inv.get(f"{side}_r1", {}))
+        r2 = self._extract_debate_text(inv.get(f"{side}_r2", {}))
         
-        # 如果辩论数据有内容，直接渲染
-        combined = "\n\n".join(t for t in texts if t)
-        if combined:
-            return self._render_markdown(combined)
+        parts = []
+        if r1:
+            parts.append(f"<h4>Round 1</h4>{self._render_markdown(r1)}")
+        if r2:
+            parts.append(f"<h4>Round 2</h4>{self._render_markdown(r2)}")
         
-        # fallback: 从 parallel_analysis 的旧格式读
-        pa = result.get("parallel_analysis", {})
-        analyst = pa.get(f"{side}_analyst", {})
-        if isinstance(analyst, dict):
-            analysis = analyst.get("analysis", [])
-            if analysis:
-                return "".join(f"<li>{self._render_markdown(p)}</li>" for p in analysis)
-        return "<p>待分析</p>"
+        return "\n".join(parts) if parts else "<p>待分析</p>"
 
 
     @staticmethod
     def _extract_debate_text(raw):
-        """从辩论输出中提取可渲染的文本。
+        """按 schema 从辩论对象中读取 debate_text。
         
-        LLM 输出可能是：
-        1. 纯字符串
-        2. dict 带 debate_text 字段
-        3. ```json 包裹的 JSON 字符串
+        schema 约定: 辩论输出是 dict，必含 debate_text (string)。
         """
         if not raw:
             return ""
         if isinstance(raw, dict):
-            return raw.get("debate_text", "") or raw.get("full_text", "") or str(raw)
-        if not isinstance(raw, str):
-            return str(raw)
-        
-        text = raw.strip()
-        # 去掉 ```json ... ``` 包裹
-        if text.startswith("```"):
-            lines = text.split("\n")
-            if lines[0].strip().startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
-        
-        # 尝试 JSON 解析提取 debate_text
-        try:
-            import json as _json
-            obj = _json.loads(text)
-            if isinstance(obj, dict):
-                return obj.get("debate_text", "") or obj.get("full_text", "") or text
-        except (ValueError, TypeError):
-            pass
-        
-        # 如果看起来像 JSON 但解析失败，用正则提取 debate_text 值
-        if '"debate_text"' in text[:100]:
-            m = re.search(r'"debate_text"\s*:\s*"', text)
-            if m:
-                start = m.end()
-                # 找到匹配的结束引号（跳过转义的）
-                i = start
-                while i < len(text):
-                    if text[i] == '"' and text[i-1:i] != '\\':
-                        break
-                    i += 1
-                extracted = text[start:i]
-                extracted = extracted.replace('\\n', '\n').replace('\\"', '"')
-                return extracted
-        
-        return text
-
+            return raw.get("debate_text", "")
+        return str(raw)
     def _generate_html(self, result: Dict[str, Any]) -> str:
         """生成 HTML 格式的报告"""
         stock_code = result["stock_code"]
