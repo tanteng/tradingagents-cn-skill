@@ -742,11 +742,50 @@ class ReportGenerator:
         return html
 
     def _html_to_pdf(self, html_content: str, output_path: Path):
-        """将 HTML 转换为 PDF。优先级：Chrome headless > weasyprint > wkhtmltopdf > 保存 HTML"""
+        """将 HTML 转换为 PDF。
+        macOS: Chrome headless 优先（解决 weasyprint 字体嵌入乱码）
+        其他平台: weasyprint 优先（服务器环境更轻量）
+        """
+        import platform
         import subprocess
         import tempfile
 
-        # 1. 优先使用 Chrome headless（字体渲染最可靠，无乱码问题）
+        is_macos = platform.system() == "Darwin"
+
+        if is_macos:
+            # macOS: Chrome headless 优先（weasyprint 在 macOS 上字体嵌入有乱码问题）
+            if self._try_chrome_headless(html_content, output_path):
+                return
+            # macOS fallback: weasyprint
+            if self._try_weasyprint(html_content, output_path):
+                return
+        else:
+            # Linux/其他: weasyprint 优先（服务器上有 Noto CJK 字体，渲染正常）
+            if self._try_weasyprint(html_content, output_path):
+                return
+            # Linux fallback: Chrome headless
+            if self._try_chrome_headless(html_content, output_path):
+                return
+
+        # 最终 fallback: wkhtmltopdf
+        if self._try_wkhtmltopdf(html_content, output_path):
+            return
+
+        # 所有引擎都不可用: 保存 HTML
+        html_path = output_path.with_suffix('.html')
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        raise RuntimeError(
+            f"PDF 生成失败（Chrome/weasyprint/wkhtmltopdf 均不可用）。"
+            f"HTML 报告已保存至: {html_path}"
+        )
+
+    @staticmethod
+    def _try_chrome_headless(html_content: str, output_path: Path) -> bool:
+        """尝试用 Chrome headless 生成 PDF。成功返回 True。"""
+        import subprocess
+        import tempfile
+
         chrome_paths = [
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             "/usr/bin/google-chrome",
@@ -755,6 +794,7 @@ class ReportGenerator:
             "/usr/bin/chromium",
         ]
         for chrome in chrome_paths:
+            temp_html = None
             try:
                 with tempfile.NamedTemporaryFile(
                     mode='w', suffix='.html', delete=False, encoding='utf-8'
@@ -762,7 +802,7 @@ class ReportGenerator:
                     f.write(html_content)
                     temp_html = f.name
 
-                result = subprocess.run(
+                subprocess.run(
                     [
                         chrome, "--headless", "--disable-gpu", "--no-sandbox",
                         "--run-all-compositor-stages-before-draw",
@@ -774,26 +814,35 @@ class ReportGenerator:
                     capture_output=True,
                     timeout=60,
                 )
-                os.unlink(temp_html)
                 if output_path.exists() and output_path.stat().st_size > 0:
-                    return
+                    return True
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-                # 清理临时文件
-                try:
-                    os.unlink(temp_html)
-                except (NameError, OSError):
-                    pass
-                continue
+                pass
+            finally:
+                if temp_html:
+                    try:
+                        os.unlink(temp_html)
+                    except OSError:
+                        pass
+        return False
 
-        # 2. Fallback: weasyprint
+    @staticmethod
+    def _try_weasyprint(html_content: str, output_path: Path) -> bool:
+        """尝试用 weasyprint 生成 PDF。成功返回 True。"""
         try:
             from weasyprint import HTML
             HTML(string=html_content).write_pdf(output_path)
-            return
+            return True
         except (ImportError, Exception):
-            pass
+            return False
 
-        # 3. Fallback: wkhtmltopdf
+    @staticmethod
+    def _try_wkhtmltopdf(html_content: str, output_path: Path) -> bool:
+        """尝试用 wkhtmltopdf 生成 PDF。成功返回 True。"""
+        import subprocess
+        import tempfile
+
+        temp_html = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode='w', suffix='.html', delete=False, encoding='utf-8'
@@ -806,23 +855,17 @@ class ReportGenerator:
                  '--margin-bottom', '15mm', '--margin-left', '12mm', '--margin-right', '12mm',
                  temp_html, str(output_path)],
                 check=True,
+                capture_output=True,
             )
-            os.unlink(temp_html)
-            return
+            return True
         except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-            try:
-                os.unlink(temp_html)
-            except (NameError, OSError):
-                pass
-
-        # 4. 最终 fallback: 保存 HTML
-        html_path = output_path.with_suffix('.html')
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        raise RuntimeError(
-            f"PDF 生成失败（Chrome/weasyprint/wkhtmltopdf 均不可用）。"
-            f"HTML 报告已保存至: {html_path}"
-        )
+            return False
+        finally:
+            if temp_html:
+                try:
+                    os.unlink(temp_html)
+                except OSError:
+                    pass
 
 
 if __name__ == "__main__":
