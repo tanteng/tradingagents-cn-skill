@@ -636,7 +636,7 @@ class ReportGenerator:
                 <div class="big">{final.get("rating", final.get("final_recommendation", "持有"))}</div>
                 <div class="sub">风险等级: {final["risk_level"]} | 投资期限: {final["investment_horizon"]}</div>
             </div>
-            <p><strong>核心逻辑:</strong> {manager["rationale"]}</p>
+            <p><strong>核心逻辑:</strong></p>{self._render_markdown(manager.get("rationale", ""))}
         </div>
 
         <!-- 目标价位 -->
@@ -668,7 +668,7 @@ class ReportGenerator:
             <h2>新闻与情绪分析</h2>
             <div class="news-section">
                 <div class="sentiment-summary">
-                    <strong>新闻情绪:</strong> {news_analyst.get("sentiment", news_analyst.get("新闻情绪", "待获取"))} | 共 {len(news_analyst.get("news_list", []))} 条新闻
+                    <strong>新闻情绪:</strong> {news_analyst.get("sentiment_overall", news_analyst.get("sentiment", news_analyst.get("新闻情绪", "待获取")))} | 共 {len(news_analyst.get("news_list", []))} 条新闻
                 </div>
                 {news_list_html}
             </div>
