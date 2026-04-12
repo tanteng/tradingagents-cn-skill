@@ -80,7 +80,7 @@ mkdir -p {baseDir}/scripts/logs
 
 ```
 Step 1: 获取原始文本 + 结构化提取 → stock_data JSON
-Step 2: web_search + web_fetch 获取新闻 → news_data
+Step 2: web_search 获取新闻 → news_data
 ───── 阶段一：四位分析师报告（1次LLM调用）─────
 Step 3: 四位分析师综合分析 LLM → tech/fundamentals/news/social
 ───── 阶段二：多空辩论（2轮）─────
@@ -193,7 +193,7 @@ Step 10: 组装 JSON → 生成 PDF
 2. `{股票代码} stock news latest`
 3. `{股票名称} 研报 评级`
 
-**对每条搜索结果**：调用 web_fetch 获取正文摘要（前 200 字）。
+从搜索结果中提取每条新闻的**标题和摘要（snippet）**，不需要逐条 web_fetch。
 
 将搜索结果整理为 JSON 数组，**保存为变量 `news_data`**：
 ```json
