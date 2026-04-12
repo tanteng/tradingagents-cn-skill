@@ -297,11 +297,11 @@ class ReportGenerator:
         # 结构B（扁平）: tech_analyst.indicators / .操作建议 / .技术信号总结
         trend = ta.get("趋势判断", {})
         nested_indicators = ta.get("关键指标", {})
-        advice = ta.get("操作建议", {}) or tech_analyst_data.get("操作建议", {})
+        advice = ta.get("trade_advice", {}) or tech_analyst_data.get("trade_advice", {})
         flat_indicators = tech_analyst_data.get("indicators", {})
         tech_summary = (
-            ta.get("技术信号总结", "")
-            or tech_analyst_data.get("技术信号总结", "")
+            ta.get("signal_summary", "")
+            or tech_analyst_data.get("signal_summary", "")
             or (tech_analyst_data.get("analysis", [""])[0] if tech_analyst_data.get("analysis") else "")
         )
 
@@ -668,7 +668,7 @@ class ReportGenerator:
             <h2>新闻与情绪分析</h2>
             <div class="news-section">
                 <div class="sentiment-summary">
-                    <strong>新闻情绪:</strong> {news_analyst.get("sentiment_overall", news_analyst.get("sentiment", news_analyst.get("新闻情绪", "待获取")))} | 共 {len(news_analyst.get("news_list", []))} 条新闻
+                    <strong>新闻情绪:</strong> {news_analyst.get("sentiment", news_analyst.get("sentiment", news_analyst.get("sentiment", "待获取")))} | 共 {len(news_analyst.get("news_list", []))} 条新闻
                 </div>
                 {news_list_html}
             </div>

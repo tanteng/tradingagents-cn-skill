@@ -295,8 +295,8 @@ def get_default_value(step: str) -> Dict:
             "report": "技术分析数据不足，无法生成完整报告。",
             "key_points": ["数据不足"],
             "indicators": {},
-            "技术信号总结": "数据不足",
-            "操作建议": {"支撑位": "N/A", "压力位": "N/A", "止损位": "N/A"},
+            "signal_summary": "数据不足",
+            "trade_advice": {"支撑位": "N/A", "压力位": "N/A", "止损位": "N/A"},
         },
         "fundamentals": {
             "report": "基本面数据不足，无法生成完整报告。",
@@ -308,16 +308,16 @@ def get_default_value(step: str) -> Dict:
         "news": {
             "report": "新闻数据不足，无法生成完整报告。",
             "key_points": ["数据不足"],
-            "新闻情绪": "中性",
-            "关键催化剂": [],
-            "风险事件": [],
+            "sentiment": "中性",
+            "catalysts": [],
+            "risk_events": [],
         },
         "social": {
             "report": "社交媒体数据不足，无法生成完整报告。",
             "key_points": ["数据不足"],
             "sentiment_score": 0.5,
-            "情绪趋势": "稳定",
-            "舆情总结": "数据不足",
+            "sentiment_trend": "稳定",
+            "sentiment_summary": "数据不足",
         },
         "manager": {
             "recommendation": "持有",
