@@ -54,9 +54,9 @@
   "risk_level": "低/中/高",
   "investment_horizon": "短期/中期/长期",
   "risk_assessment": {
-    "市场风险": "评估描述",
-    "流动性风险": "评估描述",
-    "波动性风险": "评估描述"
+    "market_risk": "评估描述",
+    "liquidity_risk": "评估描述",
+    "volatility_risk": "评估描述"
   },
   "suitable_investors": ["投资者类型1", "投资者类型2"],
   "monitoring_points": ["监控要点1", "监控要点2", "监控要点3"]

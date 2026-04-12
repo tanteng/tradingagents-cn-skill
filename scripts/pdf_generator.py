@@ -363,10 +363,10 @@ class ReportGenerator:
                 "PE": _xtr(_rpt_clean, [r'PE[（(TTM)]*[）)]?[：:≈约为\s]*([\d.]+|亏损|负值|N/A)', r'市盈率[：:≈约为\s]*([\d.]+|亏损)']),
                 "PB": _xtr(_rpt_clean, [r'PB[：:≈约为\s]*([\d.]+)', r'市净率[：:≈约为\s]*([\d.]+)']),
                 "ROE": _xtr(_rpt_clean, [r'ROE[：:≈约为\s]*([\-\d.]+%?)', r'净资产收益率[：:≈约为\s]*([\-\d.]+%?)']),
-                "营收增速": _xtr(_rpt_clean, [r'营收[同比]*增[速长率][：:≈约为\s]*([\d.]+%)', r'revenue.{0,10}grew?[：:≈约为\s]*([\d.]+%)']),
-                "毛利率": _xtr(_rpt_clean, [r'毛利率[：:≈约为\s]*([\d.]+%)', r'[Gg]ross [Mm]argin[：:≈约为\s]*([\d.]+%)']),
-                "净利率": _xtr(_rpt_clean, [r'净利[润率][率]?[：:≈约为\s]*([\-\d.]+%)', r'[Nn]et [Mm]argin[：:≈约为\s]*([\-\d.]+%)']),
-                "负债率": _xtr(_rpt_clean, [r'负债率[：:≈约为\s]*([\d.]+%)', r'资产负债率[：:≈约为\s]*([\d.]+%)']),
+                "revenue_growth": _xtr(_rpt_clean, [r'营收[同比]*增[速长率][：:≈约为\s]*([\d.]+%)', r'revenue.{0,10}grew?[：:≈约为\s]*([\d.]+%)']),
+                "gross_margin": _xtr(_rpt_clean, [r'毛利率[：:≈约为\s]*([\d.]+%)', r'[Gg]ross [Mm]argin[：:≈约为\s]*([\d.]+%)']),
+                "net_margin": _xtr(_rpt_clean, [r'净利[润率][率]?[：:≈约为\s]*([\-\d.]+%)', r'[Nn]et [Mm]argin[：:≈约为\s]*([\-\d.]+%)']),
+                "debt_ratio": _xtr(_rpt_clean, [r'负债率[：:≈约为\s]*([\d.]+%)', r'资产负债率[：:≈约为\s]*([\d.]+%)']),
             }
             # 填充到 fa 嵌套结构中
             if isinstance(fa, dict):
@@ -384,7 +384,7 @@ class ReportGenerator:
         growth = fa.get("成长性", {})
         health = fa.get("财务健康", {})
         # 综合评价：先从结构化字段取，再从 report 文本中提取
-        fund_summary = fa.get("综合评价", "") or fa.get("基本面总结", "") or fund_analyst_data.get("基本面总结", "")
+        fund_summary = fa.get("综合评价", "") or fa.get("fundamental_rating", "") or fund_analyst_data.get("fundamental_rating", "")
         if not fund_summary:
             # report 可能是 ```json {"report": "..."} ``` 嵌套格式
             _raw_report = fund_analyst_data.get("report", "")
@@ -395,7 +395,7 @@ class ReportGenerator:
                     try:
                         _parsed = json.loads(_cleaned)
                         if isinstance(_parsed, dict):
-                            fund_summary = _parsed.get("report", "") or _parsed.get("综合评价", "") or _parsed.get("基本面总结", "")
+                            fund_summary = _parsed.get("report", "") or _parsed.get("综合评价", "") or _parsed.get("fundamental_rating", "")
                     except:
                         # JSON 解析失败，尝试手工提取 report 字段的值
                         _m = re.search(r'"report"\s*:\s*"(.*?)(?:"\s*[,}])', _cleaned[:5000], re.DOTALL)
