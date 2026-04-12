@@ -9,11 +9,17 @@ validate_step.py — Agent LLM 输出验证 + 日志工具 (TradingAgents-CN)
 - exit 1 + stderr JSON → 验证失败，输出错误信息和 hint
 
 用法：
-  echo '<LLM输出>' | python3 validate_step.py --step tech --stock-code PDD --attempt 1
-  python3 validate_step.py --step tech --default
+  # 初始化 report.json
+  python3 validate_step.py --init '{"stock_code":"NET","stock_name":"Cloudflare","current_price":168.94,"news_data":{"news_list":[...]}}' --stock-code NET
 
-辩论步骤（bull_r1/bear_r1/bull_r2/bear_r2/risk_aggressive/risk_conservative/risk_neutral）
-输出纯文本，不需要通过本脚本验证。
+  # 验证 + 保存到 report.json
+  echo '<LLM输出>' | python3 validate_step.py --step tech --stock-code NET --save
+
+  # 辩论 R2
+  echo '<LLM输出>' | python3 validate_step.py --step bull_debate --stock-code NET --round 2 --save
+
+  # 获取默认值
+  python3 validate_step.py --step tech --default
 
 日志写入 {script_dir}/logs/ 目录。
 """
@@ -34,6 +40,24 @@ from typing import Any, Dict, List, Optional, Tuple
 
 SCRIPT_DIR = Path(__file__).parent
 LOG_DIR = SCRIPT_DIR / "logs"
+
+# step 名 → report.json 中的字段路径
+# validate --save 时，把验证通过的数据写入 report.json 的对应位置
+STEP_TO_PATH = {
+    "step1b":             None,  # step1b 数据由 --init 初始化
+    "tech":               "parallel_analysis.tech_analyst",
+    "fundamentals":       "parallel_analysis.fundamentals_analyst",
+    "news":               "parallel_analysis.news_analyst",
+    "social":             "parallel_analysis.social_analyst",
+    "bull_debate":        "investment_debate.bull_r1",  # R1/R2 由 --round 决定
+    "bear_debate":        "investment_debate.bear_r1",
+    "manager":            "manager_decision",
+    "trader":             "trading_plan",
+    "risk_aggressive":    "risk_debate.aggressive",
+    "risk_conservative":  "risk_debate.conservative",
+    "risk_neutral":       "risk_debate.neutral",
+    "portfolio_manager":  "final_decision",
+}
 
 # 重试次数上限（供 SKILL.md 参考，脚本本身不执行重试）
 RETRY_LIMITS = {
@@ -359,15 +383,128 @@ def get_default_value(step: str) -> Dict:
 # 主函数
 # ============================================================
 
+def _get_report_path(stock_code):
+    """获取 report.json 的路径"""
+    results_dir = SCRIPT_DIR / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    return results_dir / f"{stock_code}_report.json"
+
+
+def _set_nested(d, path, value):
+    """按 a.b.c 路径设置嵌套字典的值"""
+    keys = path.split(".")
+    for k in keys[:-1]:
+        if k not in d or not isinstance(d[k], dict):
+            d[k] = {}
+        d = d[k]
+    d[keys[-1]] = value
+
+
+def init_report(stock_code, stock_name="", current_price=None, news_data=None):
+    """初始化 report.json 骨架"""
+    report = {
+        "stock_code": stock_code,
+        "stock_name": stock_name,
+        "current_price": current_price,
+        "timestamp": datetime.now().isoformat(),
+        "news_data": news_data or {"news_list": []},
+        "parallel_analysis": {
+            "tech_analyst": {},
+            "fundamentals_analyst": {},
+            "news_analyst": {},
+            "social_analyst": {},
+        },
+        "investment_debate": {
+            "bull_r1": {},
+            "bear_r1": {},
+            "bull_r2": {},
+            "bear_r2": {},
+        },
+        "manager_decision": {},
+        "trading_plan": {},
+        "risk_debate": {
+            "aggressive": {},
+            "conservative": {},
+            "neutral": {},
+        },
+        "final_decision": {},
+    }
+    rp = _get_report_path(stock_code)
+    with open(rp, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    return str(rp)
+
+
+def _save_to_report(step, stock_code, data, round_num=1):
+    """把验证通过的数据写入 report.json 的对应字段"""
+    rp = _get_report_path(stock_code)
+
+    # 读取已有 report
+    if rp.exists():
+        with open(rp, "r", encoding="utf-8") as f:
+            report = json.load(f)
+    else:
+        # 如果没有就初始化
+        report = json.loads(json.dumps({
+            "stock_code": stock_code, "stock_name": "", "current_price": None,
+            "timestamp": datetime.now().isoformat(),
+            "news_data": {"news_list": []},
+            "parallel_analysis": {"tech_analyst": {}, "fundamentals_analyst": {}, "news_analyst": {}, "social_analyst": {}},
+            "investment_debate": {"bull_r1": {}, "bear_r1": {}, "bull_r2": {}, "bear_r2": {}},
+            "manager_decision": {}, "trading_plan": {},
+            "risk_debate": {"aggressive": {}, "conservative": {}, "neutral": {}},
+            "final_decision": {},
+        }))
+
+    # 确定写入路径
+    path = STEP_TO_PATH.get(step)
+    if not path:
+        return
+
+    # 辩论步骤需要区分 R1/R2
+    if step == "bull_debate":
+        path = f"investment_debate.bull_r{round_num}"
+    elif step == "bear_debate":
+        path = f"investment_debate.bear_r{round_num}"
+
+    _set_nested(report, path, data)
+
+    # 写回
+    with open(rp, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate LLM output for a given step")
-    parser.add_argument("--step", required=True, help="Step name")
+    parser.add_argument("--step", help="Step name")
     parser.add_argument("--stock-code", default="UNKNOWN", help="Stock code for logging")
     parser.add_argument("--attempt", type=int, default=1, help="Attempt number")
     parser.add_argument("--default", action="store_true", help="Output default value for the step")
+    parser.add_argument("--save", action="store_true", help="Save validated result to report.json")
+    parser.add_argument("--init", help="Initialize report.json with stock metadata JSON string")
+    parser.add_argument("--round", type=int, default=1, choices=[1, 2], help="Debate round number (1 or 2)")
     args = parser.parse_args()
 
     # 如果请求默认值，直接输出
+    # --init: 初始化 report.json
+    if args.init:
+        try:
+            meta = json.loads(args.init)
+        except json.JSONDecodeError:
+            meta = json.load(sys.stdin)
+        rp = init_report(
+            stock_code=meta.get("stock_code", args.stock_code or "UNKNOWN"),
+            stock_name=meta.get("stock_name", ""),
+            current_price=meta.get("current_price"),
+            news_data=meta.get("news_data"),
+        )
+        print(rp)
+        sys.exit(0)
+
+    # 非 --init 模式必须提供 --step
+    if not args.init and not args.step:
+        parser.error("--step is required (unless using --init)")
+
     if args.default:
         default = get_default_value(args.step)
         json.dump(default, sys.stdout, ensure_ascii=False, indent=2)
@@ -485,6 +622,10 @@ def main():
         input_length=len(raw_input),
         output=output_str,
     )
+
+    # --save: 写入 report.json
+    if args.save and args.stock_code:
+        _save_to_report(args.step, args.stock_code, data, args.round)
 
     # stdout 输出清洗后的 JSON
     sys.stdout.write(output_str)

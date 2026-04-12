@@ -38,13 +38,26 @@ metadata:
 
 **全程自动执行，不询问用户。** 遇到错误自动重试（最多 3 次），某步失败使用默认值继续，只在最终输出 PDF 和摘要。
 
-### 验证策略
+### 验证与数据存储策略
 
-**不需要每步验证**。只在以下两个节点使用 `validate_step.py`：
-1. **Step 8（投资组合经理）**：验证 rating 是否为五级之一
-2. **Step 10（PDF 生成前）**：如果 JSON 组装出错，用默认值兜底
+**每步 LLM 调用后必须 validate + save。** `validate_step.py --save` 会验证输出并自动写入 `results/{stock_code}_report.json` 的对应字段。
 
-其他步骤直接信任 LLM 输出。如果某步 LLM 返回空或格式异常，获取默认值继续：
+**Step 1 完成后初始化 report.json：**
+```bash
+python3 {baseDir}/scripts/validate_step.py --init '{"stock_code":"<code>","stock_name":"<name>","current_price":<price>,"news_data":<Step2的news_data>}' --stock-code <code>
+```
+
+**每步 validate 命令格式：**
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step <步骤名> --stock-code <code> --save
+```
+
+辩论 Round 2 需要加 `--round 2`：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bull_debate --stock-code <code> --round 2 --save
+```
+
+验证失败（exit 1）→ 将 stderr 中的 hint 追加到 prompt 重试，最多 3 次。全部失败 → 用默认值：
 ```bash
 python3 {baseDir}/scripts/validate_step.py --step <步骤名> --default
 ```
@@ -187,7 +200,15 @@ Step 10: 组装 JSON → 生成 PDF
 
 LLM 将一次性返回包含 `tech_analyst`、`fundamentals_analyst`、`news_analyst`、`social_analyst` 四个对象的 JSON。
 
-**如果输出异常**（空、非 JSON、缺少某个分析师），对缺失的分析师使用默认值：
+**验证并保存**：将返回的 JSON 中每个分析师的输出分别 validate + save：
+```bash
+echo '<tech_analyst部分>' | python3 {baseDir}/scripts/validate_step.py --step tech --stock-code {股票代码} --save
+echo '<fundamentals_analyst部分>' | python3 {baseDir}/scripts/validate_step.py --step fundamentals --stock-code {股票代码} --save
+echo '<news_analyst部分>' | python3 {baseDir}/scripts/validate_step.py --step news --stock-code {股票代码} --save
+echo '<social_analyst部分>' | python3 {baseDir}/scripts/validate_step.py --step social --stock-code {股票代码} --save
+```
+
+**如果某个分析师输出异常**（空、非 JSON、缺字段），validate 会 exit 1 并给 hint，重试或使用默认值：
 ```bash
 python3 {baseDir}/scripts/validate_step.py --step tech --default
 python3 {baseDir}/scripts/validate_step.py --step fundamentals --default
@@ -223,6 +244,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
   这是第一轮辩论，尚无看空方论点。请基于以上分析报告构建你的看多论证。
   ```
 
+**验证并保存 bull_r1**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bull_debate --stock-code {股票代码} --round 1 --save
+```
+
 ### 4B: 看空研究员 Round 1
 
 - system_prompt: 读取 `references/bear_prompt.md`
@@ -248,6 +274,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
   这是第一轮辩论。请基于分析报告构建你的看空论证，并回应看多方的观点。
   ```
 
+**验证并保存 bear_r1**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bear_debate --stock-code {股票代码} --round 1 --save
+```
+
 ---
 
 ## Step 5: 多空辩论 Round 2
@@ -266,6 +297,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
   请针对看空方的每个具体论点进行回应和反驳。
   ```
 
+**验证并保存 bull_r2**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bull_debate --stock-code {股票代码} --round 2 --save
+```
+
 ### 5B: 看空研究员 Round 2
 
 - system_prompt: 读取 `references/bear_prompt.md`
@@ -280,6 +316,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
 
   请针对看多方的每个具体论点进行回应和反驳。
   ```
+
+**验证并保存 bear_r2**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bear_debate --stock-code {股票代码} --round 2 --save
+```
 
 ---
 
@@ -307,6 +348,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
   请做出明确的决策（买入/卖出/持有），并制定详细的投资计划。以纯 JSON 格式返回。
   ```
 
+**验证并保存**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step manager --stock-code {股票代码} --save
+```
+
 ---
 
 ## Step 7: 交易员计划
@@ -323,6 +369,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
   请基于此计划，制定具体的交易方案。以纯 JSON 格式返回。
   所有价格必须是具体数字。
   ```
+
+**验证并保存**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step trader --stock-code {股票代码} --save
+```
 
 ---
 
@@ -347,6 +398,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
   请从激进型风险分析师的角度评估此交易计划。
   ```
 
+**验证并保存**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step risk_aggressive --stock-code {股票代码} --save
+```
+
 ### 8B: 保守型风控分析师
 
 - system_prompt: 读取 `references/risk_conservative_prompt.md`
@@ -362,6 +418,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
 
   请从保守型风险分析师的角度评估此交易计划，并回应激进派的观点。
   ```
+
+**验证并保存**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step risk_conservative --stock-code {股票代码} --save
+```
 
 ### 8C: 中立型风控分析师
 
@@ -381,6 +442,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
 
   请从中立型风险分析师的角度评估此交易计划，平衡激进派和保守派的观点。
   ```
+
+**验证并保存**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step risk_neutral --stock-code {股票代码} --save
+```
 
 ---
 
@@ -416,93 +482,27 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
 
 **此步必须验证**：
 ```bash
-echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step portfolio_manager --stock-code {股票代码} --attempt 1
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step portfolio_manager --stock-code {股票代码} --attempt 1 --save
 ```
 
 - `exit 0` → 通过，继续
 - `exit 1` → 将 hint 追加到 prompt 重新调用 LLM，最多重试 **3 次**
 - 超过 3 次 → 使用默认值：
   ```bash
-  python3 {baseDir}/scripts/validate_step.py --step portfolio_manager --default
+  python3 {baseDir}/scripts/validate_step.py --step portfolio_manager --default --stock-code {股票代码} --save
   ```
 
 ---
 
 ## Step 10: 生成 PDF 报告
 
-**⚠️ 核心规则：将所有步骤的结果组装成一个完整 JSON 对象，通过 stdin 一次性传给 generate_report.py。不存中间文件。**
-
-严格按照以下结构组装 JSON。每个字段必须是 JSON **对象**（不是字符串），直接嵌入对应步骤的完整输出：
-
-```json
-{
-  "stock_code": "1211.HK",
-  "stock_name": "比亚迪股份",
-  "current_price": 105.1,
-  "timestamp": "2026-04-12T00:00:00",
-  "news_data": {
-    "news_list": [ ... Step 2 的新闻数组 ... ]
-  },
-  "parallel_analysis": {
-    "tech_analyst": { ... Step 3A 的完整 JSON 输出 ... },
-    "fundamentals_analyst": { ... Step 3B 的完整 JSON 输出 ... },
-    "news_analyst": { ... Step 3C 的完整 JSON 输出（含 news_list）... },
-    "social_analyst": { ... Step 3D 的完整 JSON 输出 ... }
-  },
-  "investment_debate": {
-    "bull_r1": { "debate_text": "...", "core_logic": "...", "bull_case": [...], "confidence": 0.8 },
-    "bear_r1": { "debate_text": "...", "core_logic": "...", "bear_case": [...], "confidence": 0.7 },
-    "bull_r2": { "debate_text": "...", "core_logic": "...", "bull_case": [...], "confidence": 0.8 },
-    "bear_r2": { "debate_text": "...", "core_logic": "...", "bear_case": [...], "confidence": 0.7 }
-  },
-  "manager_decision": { "recommendation": "买入", "rationale": "...", "investment_plan": "..." },
-  "trading_plan": { "decision": "买入", "buy_price": 103.0, "target_price": 125.0, "stop_loss": 97.0, ... },
-  "risk_debate": {
-    "aggressive": { "debate_text": "...", "stance": "...", "position_size": "...", ... },
-    "conservative": { "debate_text": "...", "stance": "...", "position_size": "...", ... },
-    "neutral": { "debate_text": "...", "stance": "...", "position_size": "...", ... }
-  },
-  "final_decision": { "rating": "买入", "executive_summary": "...", "investment_thesis": "...", "risk_level": "中", ... }
-}
-```
-
-**类型规则（严格遵守）**：
-- `stock_code`, `stock_name`, `timestamp`: **string**
-- `current_price`: **number**
-- `news_data.news_list`: **array**，每项是 object
-- `parallel_analysis.*`: **object**，每个分析师的完整 JSON 输出
-- `investment_debate.bull_r1` 等: **object**，不是 string，必须包含 `debate_text` 字段
-- `risk_debate.aggressive` 等: **object**，不是 string，必须包含 `debate_text` 字段
-- `manager_decision`, `trading_plan`, `final_decision`: **object**
-
-**❌ 错误示例**：
-```json
-{
-  "investment_debate": {
-    "bull_r1": "这是一段文字..."
-  }
-}
-```
-bull_r1 的值必须是 object，不是 string。
-
-**✅ 正确示例**：
-```json
-{
-  "investment_debate": {
-    "bull_r1": { "debate_text": "这是一段文字...", "core_logic": "...", "bull_case": [...] }
-  }
-}
-```
-
-**生成 PDF 命令**：
+**所有步骤的数据已通过 `--save` 自动写入 `results/{stock_code}_report.json`。** 直接生成 PDF：
 
 ```bash
-echo '<完整JSON>' | python3 {baseDir}/scripts/generate_report.py
+python3 {baseDir}/scripts/generate_report.py --input {baseDir}/scripts/results/{股票代码}_report.json
 ```
 
-只有这一种调用方式。不需要 normalize_data.py，不需要 --stdin 参数，不需要中间文件。
-
-如果命令失败（exit code != 0），检查 JSON 字段完整性后重试一次。
+如果命令失败（exit code != 0），检查日志后重试一次。
 
 **必须将 PDF 文件直接发送给用户。** 使用文件发送能力将 PDF 作为附件发给用户。
 
