@@ -66,6 +66,9 @@ class ReportGenerator:
         "debt_ratio": "资产负债率",
         "dividend_yield": "股息率",
         "free_cash_flow": "自由现金流",
+        "profit_growth": "利润增速",
+        "buy_rating_count": "买入评级数",
+        "target_price": "目标价格",
         # 综合决策
         "rating": "评级",
         "risk_level": "风险等级",
@@ -340,7 +343,7 @@ class ReportGenerator:
                 </div>
                 """
         else:
-            news_list_html = '<div class="no-news">暂无新闻数据，请使用 web_search MCP tool 获取近期新闻</div>'
+            news_list_html = '<div class="no-news">暂无新闻数据</div>'
 
         # 生成社交媒体 HTML
         social_html = ""
@@ -498,8 +501,19 @@ class ReportGenerator:
                 fund_html += f'<li style="margin-left:16px">{k}: {v}</li>'
         if fund_summary:
             fund_html += f"<li><strong>综合评价：</strong>{fund_summary}</li>"
+        # 当嵌套结构（估值分析/盈利能力/成长性/财务健康）全为空时，
+        # 回退到 indicators 扁平结构 + report 文本
         if not valuation and not profitability and not growth and not health:
-            fund_html = "<ul><li>待分析</li>"
+            indicators = fund_analyst_data.get("indicators", {})
+            if indicators and isinstance(indicators, dict):
+                fund_html = "<ul>"
+                fund_html += "<li><strong>关键指标：</strong></li>"
+                for k, v in indicators.items():
+                    fund_html += f'<li style="margin-left:16px">{self._cn_key(k)}: {v}</li>'
+                if fund_summary:
+                    fund_html += f"<li><strong>综合评价：</strong>{fund_summary}</li>"
+            else:
+                fund_html = "<ul><li>待分析</li>"
         fund_html += "</ul>"
 
         # 生成辩论 HTML

@@ -31,7 +31,7 @@ metadata:
 **具体要求：**
 - 不要使用 `dispatching-parallel-agents` 或类似机制
 - 不要把任何步骤委托给其他 agent 或 worker
-- 所有 LLM 调用、web_search、脚本执行都在同一个 agent 会话中完成
+- 所有 LLM 调用、搜索工具调用、脚本执行都在同一个 agent 会话中完成
 - 每一步的结果必须保存在当前会话的变量/上下文中，供后续步骤直接引用
 
 ### 执行模式
@@ -80,7 +80,7 @@ mkdir -p {baseDir}/scripts/logs
 
 ```
 Step 1: 获取原始文本 + 结构化提取 → stock_data JSON
-Step 2: web_search 获取新闻 → news_data
+Step 2: 搜索工具获取新闻 → news_data
 ───── 阶段一：四位分析师报告（1次LLM调用）─────
 Step 3: 四位分析师综合分析 LLM → tech/fundamentals/news/social
 ───── 阶段二：多空辩论（2轮）─────
@@ -105,7 +105,7 @@ Step 10: 组装 JSON → 生成 PDF
 
 - **截图/图片**：识别图片中的所有可见数据（股票代码、价格、涨跌幅、均线、MACD、KDJ 等技术指标数值），优先提取图表上标注的具体数字
 - **文字描述**：直接使用
-- **股票代码/名称**：后续通过 web_search 补充数据
+- **股票代码/名称**：后续通过搜索工具补充数据
 
 **LLM 调用：结构化数据提取**
 - system_prompt:
@@ -156,7 +156,7 @@ Step 10: 组装 JSON → 生成 PDF
 
 ## Step 2: 获取新闻数据
 
-使用 web_search 工具搜索该股票的最新新闻，**至少搜索 3 个查询**：
+使用系统可用的搜索工具（如 web_search 或已安装的搜索类 MCP 工具）搜索该股票的最新新闻，**至少搜索 3 个查询**：
 1. `{股票名称} {股票代码} 最新消息 2026`
 2. `{股票代码} stock news latest`
 3. `{股票名称} 研报 评级`
