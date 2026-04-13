@@ -17,8 +17,8 @@ metadata:
 
 # TradingAgents-CN Skill v3
 
-多智能体股票分析框架。Agent **在主进程中串行**完成 10 步分析，参照 TradingAgents 论文架构：
-四位分析师（1次调用）→ 多空辩论（2轮）→ 研究管理者裁决 → 交易员 → 风控三方辩论 → 投资组合经理最终决策 → PDF 报告。
+多智能体股票分析框架。Agent **在主进程中串行**完成 13 步分析，参照 TradingAgents 论文架构：
+四位分析师（各自独立调用）→ 多空辩论（2轮）→ 研究管理者裁决 → 交易员 → 风控三方辩论 → 投资组合经理最终决策 → PDF 报告。
 
 ## 全局规则
 
@@ -80,20 +80,23 @@ mkdir -p {baseDir}/scripts/logs
 ```
 Step 1: 获取原始文本 + 结构化提取 → stock_data JSON
 Step 2: 搜索工具获取新闻 → news_data
-───── 阶段一：四位分析师报告（1次LLM调用）─────
-Step 3: 四位分析师综合分析 LLM → tech/fundamentals/news/social
+───── 阶段一：四位分析师报告（4次独立LLM调用）─────
+Step 3: 技术/市场分析师 → tech_analyst
+Step 4: 基本面分析师 → fundamentals_analyst
+Step 5: 新闻分析师 → news_analyst
+Step 6: 社交媒体/情绪分析师 → social_analyst
 ───── 阶段二：多空辩论（2轮）─────
-Step 4: 看多研究员 Round 1 + 看空研究员 Round 1
-Step 5: 看多研究员 Round 2 + 看空研究员 Round 2
+Step 7: 看多研究员 Round 1 + 看空研究员 Round 1
+Step 8: 看多研究员 Round 2 + 看空研究员 Round 2
 ───── 阶段三：研究管理者裁决 + 交易员 ─────
-Step 6: 研究管理者裁决 LLM → manager_decision
-Step 7: 交易员计划 LLM → trading_plan
+Step 9: 研究管理者裁决 LLM → manager_decision
+Step 10: 交易员计划 LLM → trading_plan
 ───── 阶段四：风控三方辩论 ─────
-Step 8: 激进 + 保守 + 中立三方风控辩论
+Step 11: 激进 + 保守 + 中立三方风控辩论
 ───── 阶段五：最终决策 ─────
-Step 9: 投资组合经理（最终决策）LLM → final_decision（验证 rating）
+Step 12: 投资组合经理（最终决策）LLM → final_decision（验证 rating）
 ───── 阶段六：报告生成 ─────
-Step 10: 组装 JSON → 生成 PDF
+Step 13: 组装 JSON → 生成 PDF
 ```
 
 ---
@@ -177,17 +180,59 @@ Step 10: 组装 JSON → 生成 PDF
 - `summary` 字段不得为空，最少 50 字
 - 如果实在搜不到，设置 `news_list` 为空数组但 `sentiment` 设为 "暂无数据"
 
-**⚠️ 重要**：`news_data` 变量必须在 Step 10 组装 JSON 时写入 `"news_data"` 字段，否则 PDF 报告中新闻部分会为空。
+**⚠️ 重要**：`news_data` 变量必须在 Step 13 组装 JSON 时写入 `"news_data"` 字段，否则 PDF 报告中新闻部分会为空。
 
 ---
 
-## Step 3: 四位分析师综合分析（1次LLM调用）
+## Step 3: 技术/市场分析师
 
 **LLM 调用：**
-- system_prompt: 读取 `references/combined_analysts_prompt.md`
+- system_prompt: 读取 `references/tech_prompt.md`
 - user_message:
   ```
-  请对以下股票进行四维度综合分析：
+  请对以下股票进行技术/市场分析：
+
+  股票数据：
+  {stock_data JSON（Step 1 结果）}
+
+  请从技术面角度深度分析，以纯 JSON 格式返回。
+  ```
+
+**验证并保存**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step tech --stock-code {股票代码} --save
+```
+
+---
+
+## Step 4: 基本面分析师
+
+**LLM 调用：**
+- system_prompt: 读取 `references/fundamentals_prompt.md`
+- user_message:
+  ```
+  请对以下股票进行基本面分析：
+
+  股票数据：
+  {stock_data JSON（Step 1 结果）}
+
+  请从基本面角度深度分析，以纯 JSON 格式返回。
+  ```
+
+**验证并保存**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step fundamentals --stock-code {股票代码} --save
+```
+
+---
+
+## Step 5: 新闻分析师
+
+**LLM 调用：**
+- system_prompt: 读取 `references/news_prompt.md`
+- user_message:
+  ```
+  请对以下股票的近期新闻进行分析：
 
   股票数据：
   {stock_data JSON（Step 1 结果）}
@@ -195,17 +240,36 @@ Step 10: 组装 JSON → 生成 PDF
   近期新闻：
   {news_data JSON（Step 2 结果）}
 
-  请同时从技术面、基本面、新闻面、情绪面四个角度深度分析，以纯 JSON 格式返回。
+  请从新闻面角度深度分析，以纯 JSON 格式返回。
   ```
 
-LLM 将一次性返回包含 `tech_analyst`、`fundamentals_analyst`、`news_analyst`、`social_analyst` 四个对象的 JSON。
-
-**验证并保存**：将返回的 JSON 中每个分析师的输出分别 validate + save：
+**验证并保存**：
 ```bash
-echo '<tech_analyst部分>' | python3 {baseDir}/scripts/validate_step.py --step tech --stock-code {股票代码} --save
-echo '<fundamentals_analyst部分>' | python3 {baseDir}/scripts/validate_step.py --step fundamentals --stock-code {股票代码} --save
-echo '<news_analyst部分>' | python3 {baseDir}/scripts/validate_step.py --step news --stock-code {股票代码} --save
-echo '<social_analyst部分>' | python3 {baseDir}/scripts/validate_step.py --step social --stock-code {股票代码} --save
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step news --stock-code {股票代码} --save
+```
+
+---
+
+## Step 6: 社交媒体/情绪分析师
+
+**LLM 调用：**
+- system_prompt: 读取 `references/social_prompt.md`
+- user_message:
+  ```
+  请对以下股票的社交媒体舆情和市场情绪进行分析：
+
+  股票数据：
+  {stock_data JSON（Step 1 结果）}
+
+  近期新闻：
+  {news_data JSON（Step 2 结果）}
+
+  请从社交媒体和公众情绪角度深度分析，以纯 JSON 格式返回。
+  ```
+
+**验证并保存**：
+```bash
+echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step social --stock-code {股票代码} --save
 ```
 
 **如果某个分析师输出异常**（空、非 JSON、缺字段），validate 会 exit 1 并给 hint，重试或使用默认值：
@@ -218,11 +282,11 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
 
 ---
 
-## Step 4: 多空辩论 Round 1
+## Step 7: 多空辩论 Round 1
 
 **一次消息内连续完成两个 LLM 调用：**
 
-### 4A: 看多研究员 Round 1
+### 7A: 看多研究员 Round 1
 
 - system_prompt: 读取 `references/bull_prompt.md`
 - user_message:
@@ -249,7 +313,7 @@ python3 {baseDir}/scripts/validate_step.py --step social --default
 echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bull_debate --stock-code {股票代码} --round 1 --save
 ```
 
-### 4B: 看空研究员 Round 1
+### 7B: 看空研究员 Round 1
 
 - system_prompt: 读取 `references/bear_prompt.md`
 - user_message:
@@ -281,9 +345,9 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bear_deba
 
 ---
 
-## Step 5: 多空辩论 Round 2
+## Step 8: 多空辩论 Round 2
 
-### 5A: 看多研究员 Round 2
+### 8A: 看多研究员 Round 2
 
 - system_prompt: 读取 `references/bull_prompt.md`
 - user_message:
@@ -302,7 +366,7 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bear_deba
 echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bull_debate --stock-code {股票代码} --round 2 --save
 ```
 
-### 5B: 看空研究员 Round 2
+### 8B: 看空研究员 Round 2
 
 - system_prompt: 读取 `references/bear_prompt.md`
 - user_message:
@@ -324,7 +388,7 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step bear_deba
 
 ---
 
-## Step 6: 研究管理者裁决
+## Step 9: 研究管理者裁决
 
 **LLM 调用：**
 - system_prompt: 读取 `references/manager_prompt.md`
@@ -355,7 +419,7 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step manager -
 
 ---
 
-## Step 7: 交易员计划
+## Step 10: 交易员计划
 
 **LLM 调用：**
 - system_prompt: 读取 `references/trader_prompt.md`
@@ -377,11 +441,11 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step trader --
 
 ---
 
-## Step 8: 风控三方辩论
+## Step 11: 风控三方辩论
 
 **连续完成三个 LLM 调用：**
 
-### 8A: 激进型风控分析师
+### 11A: 激进型风控分析师
 
 - system_prompt: 读取 `references/risk_aggressive_prompt.md`
 - user_message:
@@ -403,7 +467,7 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step trader --
 echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step risk_aggressive --stock-code {股票代码} --save
 ```
 
-### 8B: 保守型风控分析师
+### 11B: 保守型风控分析师
 
 - system_prompt: 读取 `references/risk_conservative_prompt.md`
 - user_message:
@@ -424,7 +488,7 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step risk_aggr
 echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step risk_conservative --stock-code {股票代码} --save
 ```
 
-### 8C: 中立型风控分析师
+### 11C: 中立型风控分析师
 
 - system_prompt: 读取 `references/risk_neutral_prompt.md`
 - user_message:
@@ -450,7 +514,7 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step risk_neut
 
 ---
 
-## Step 9: 投资组合经理（最终决策）
+## Step 12: 投资组合经理（最终决策）
 
 **LLM 调用：**
 - system_prompt: 读取 `references/risk_manager_prompt.md`
@@ -494,7 +558,7 @@ echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step portfolio
 
 ---
 
-## Step 10: 生成 PDF 报告
+## Step 13: 生成 PDF 报告
 
 **所有步骤的数据已通过 `--save` 自动写入 `results/{stock_code}_report.json`。** 直接生成 PDF：
 
