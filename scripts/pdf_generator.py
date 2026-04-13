@@ -16,6 +16,71 @@ from typing import Dict, Any, Optional
 class ReportGenerator:
     """股票分析报告 PDF 生成器"""
 
+    # 英文 JSON key → 中文显示名称映射表
+    # prompt 要求 JSON key 用英文保证 LLM 稳定性，PDF 渲染时转为中文
+    KEY_CN_MAP = {
+        # 技术分析 indicators
+        "trend_direction": "趋势方向",
+        "support": "支撑位",
+        "resistance": "阻力位",
+        "RSI": "RSI",
+        "MACD_signal": "MACD信号",
+        "MACD_histogram": "MACD柱状图",
+        "KDJ": "KDJ",
+        "ma_alignment": "均线排列",
+        "volume_pattern": "成交量形态",
+        "bollinger_position": "布林带位置",
+        # 操作建议 trade_advice
+        "stop_loss": "止损位",
+        "entry_point": "入场点",
+        "take_profit": "止盈位",
+        "position_size": "仓位建议",
+        # 交易计划 trading_plan
+        "decision": "操作决策",
+        "buy_price": "买入价格",
+        "target_price": "目标价格",
+        "reference_price": "参考价格",
+        "reference_target": "参考目标价",
+        "reference_stop": "参考止损价",
+        "entry_criteria": "入场条件",
+        "exit_criteria": "出场条件",
+        # 风险评估 risk_assessment
+        "market_risk": "市场风险",
+        "liquidity_risk": "流动性风险",
+        "volatility_risk": "波动性风险",
+        "policy_risk": "政策风险",
+        "industry_risk": "行业风险",
+        "credit_risk": "信用风险",
+        "concentration_risk": "集中度风险",
+        "systematic_risk": "系统性风险",
+        "operational_risk": "运营风险",
+        # 基本面 indicators
+        "PE": "PE（市盈率）",
+        "PB": "PB（市净率）",
+        "ROE": "ROE（净资产收益率）",
+        "EPS": "EPS（每股收益）",
+        "valuation": "估值水平",
+        "revenue_growth": "营收增速",
+        "gross_margin": "毛利率",
+        "net_margin": "净利率",
+        "debt_ratio": "资产负债率",
+        "dividend_yield": "股息率",
+        "free_cash_flow": "自由现金流",
+        # 综合决策
+        "rating": "评级",
+        "risk_level": "风险等级",
+        "investment_horizon": "投资期限",
+        "recommendation": "投资建议",
+        "executive_summary": "执行摘要",
+        "investment_thesis": "投资逻辑",
+        "signal_summary": "信号总结",
+    }
+
+    @classmethod
+    def _cn_key(cls, key: str) -> str:
+        """将英文 key 转为中文显示名称，无映射则原样返回"""
+        return cls.KEY_CN_MAP.get(key, key)
+
     def __init__(self):
         self.output_dir = Path(__file__).parent / "reports"
         self.output_dir.mkdir(exist_ok=True)
@@ -60,14 +125,15 @@ class ReportGenerator:
                         # 没有长文本字段，格式化输出所有内容
                         parts = []
                         for k, v in obj.items():
+                            ck = ReportGenerator._cn_key(k)
                             if isinstance(v, str) and v:
-                                parts.append(f"**{k}**: {v}")
+                                parts.append(f"**{ck}**: {v}")
                             elif isinstance(v, list) and v:
-                                parts.append(f"**{k}**: " + "、".join(str(i) for i in v))
+                                parts.append(f"**{ck}**: " + "、".join(str(i) for i in v))
                             elif isinstance(v, dict) and v:
-                                sub = "、".join(f"{sk}: {sv}" for sk, sv in v.items() if sv)
+                                sub = "、".join(f"{ReportGenerator._cn_key(sk)}: {sv}" for sk, sv in v.items() if sv)
                                 if sub:
-                                    parts.append(f"**{k}**: {sub}")
+                                    parts.append(f"**{ck}**: {sub}")
                         text = "\n\n".join(parts) if parts else str(obj)
             except:
                 pass
@@ -313,20 +379,20 @@ class ReportGenerator:
 
         if trend and isinstance(trend, dict):
             tech_html += "<li><strong>趋势判断：</strong> "
-            tech_html += " / ".join(f"{k}: {v}" for k, v in trend.items() if v)
+            tech_html += " / ".join(f"{self._cn_key(k)}: {v}" for k, v in trend.items() if v)
             tech_html += "</li>"
             has_data = True
 
         if all_indicators and isinstance(all_indicators, dict):
             tech_html += "<li><strong>关键指标：</strong></li>"
             for k, v in all_indicators.items():
-                tech_html += f'<li style="margin-left:16px">{k}: {v}</li>'
+                tech_html += f'<li style="margin-left:16px">{self._cn_key(k)}: {v}</li>'
             has_data = True
 
         if advice and isinstance(advice, dict):
             tech_html += "<li><strong>操作建议：</strong></li>"
             for k, v in advice.items():
-                tech_html += f'<li style="margin-left:16px">{k}: {v}</li>'
+                tech_html += f'<li style="margin-left:16px">{self._cn_key(k)}: {v}</li>'
             has_data = True
 
         if tech_summary:
@@ -778,7 +844,7 @@ class ReportGenerator:
         <div class="section">
             <h2>风险因素</h2>
             <ul>
-                {"".join(f"<li>{k}: {v}</li>" for k, v in final["risk_assessment"].items())}
+                {"".join(f"<li>{ReportGenerator._cn_key(k)}: {v}</li>" for k, v in final["risk_assessment"].items())}
             </ul>
             <p style="margin-top:12px;"><strong>监控要点:</strong></p>
             <ul>
