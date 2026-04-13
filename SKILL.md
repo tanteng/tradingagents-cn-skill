@@ -32,7 +32,6 @@ metadata:
 - 不要使用 `dispatching-parallel-agents` 或类似机制
 - 不要把任何步骤委托给其他 agent 或 worker
 - 所有 LLM 调用、搜索工具调用、脚本执行都在同一个 agent 会话中完成
-- 每一步的结果必须保存在当前会话的变量/上下文中，供后续步骤直接引用
 
 ### 执行模式
 
