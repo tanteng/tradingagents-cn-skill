@@ -54,11 +54,15 @@ class ReportGenerator:
         "concentration_risk": "集中度风险",
         "systematic_risk": "系统性风险",
         "operational_risk": "运营风险",
-        # 基本面 indicators
+        # 基本面 indicators（大小写都映射，LLM 输出不一定统一）
         "PE": "PE（市盈率）",
         "PB": "PB（市净率）",
         "ROE": "ROE（净资产收益率）",
         "EPS": "EPS（每股收益）",
+        "pe": "PE（市盈率）",
+        "pb": "PB（市净率）",
+        "roe": "ROE（净资产收益率）",
+        "eps": "EPS（每股收益）",
         "valuation": "估值水平",
         "revenue_growth": "营收增速",
         "gross_margin": "毛利率",
@@ -345,6 +349,18 @@ class ReportGenerator:
         else:
             news_list_html = '<div class="no-news">暂无新闻数据</div>'
 
+        # 聚合新闻情绪：优先取 news_analyst 顶层 sentiment，否则从 news_list 统计
+        _news_sentiment = news_analyst.get("sentiment", "")
+        if not _news_sentiment:
+            _sentiments = [n.get("sentiment", "") for n in news_analyst.get("news_list", []) if n.get("sentiment")]
+            if _sentiments:
+                from collections import Counter
+                _cnt = Counter(_sentiments)
+                _top = _cnt.most_common(1)[0]
+                _news_sentiment = f"{_top[0]}（{_top[1]}/{len(_sentiments)}条）"
+            else:
+                _news_sentiment = "暂无数据"
+
         # 生成社交媒体 HTML
         social_html = ""
         if social_analyst.get("platforms"):
@@ -502,14 +518,21 @@ class ReportGenerator:
         if fund_summary:
             fund_html += f"<li><strong>综合评价：</strong>{fund_summary}</li>"
         # 当嵌套结构（估值分析/盈利能力/成长性/财务健康）全为空时，
-        # 回退到 indicators 扁平结构 + report 文本
+        # 回退到 financials 扁平结构或 indicators + report 文本
         if not valuation and not profitability and not growth and not health:
+            # financials 可能是扁平 dict（如 {pe, pb, roe, gross_margin...}），直接渲染
+            _flat_fin = {k: v for k, v in fa.items() if not isinstance(v, dict) and v and v != "N/A"}
             indicators = fund_analyst_data.get("indicators", {})
-            if indicators and isinstance(indicators, dict):
+            _data = _flat_fin or (indicators if isinstance(indicators, dict) else {})
+            if _data:
                 fund_html = "<ul>"
                 fund_html += "<li><strong>关键指标：</strong></li>"
-                for k, v in indicators.items():
+                for k, v in _data.items():
                     fund_html += f'<li style="margin-left:16px">{self._cn_key(k)}: {v}</li>'
+                # 估值总结
+                _val_summary = fa.get("估值总结", "") or fund_analyst_data.get("估值总结", "")
+                if _val_summary:
+                    fund_html += f'<li><strong>估值总结：</strong>{_val_summary}</li>'
                 if fund_summary:
                     fund_html += f"<li><strong>综合评价：</strong>{fund_summary}</li>"
             else:
@@ -748,7 +771,7 @@ class ReportGenerator:
             <h2>新闻与情绪分析</h2>
             <div class="news-section">
                 <div class="sentiment-summary">
-                    <strong>新闻情绪:</strong> {news_analyst.get("sentiment", news_analyst.get("sentiment", news_analyst.get("sentiment", "待获取")))} | 共 {len(news_analyst.get("news_list", []))} 条新闻
+                    <strong>新闻情绪:</strong> {_news_sentiment} | 共 {len(news_analyst.get("news_list", []))} 条新闻
                 </div>
                 {news_list_html}
             </div>
