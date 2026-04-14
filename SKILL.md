@@ -41,11 +41,6 @@ metadata:
 
 **每步 LLM 调用后必须 validate + save。** `validate_step.py --save` 会验证输出并自动写入 `results/{stock_code}_report.json` 的对应字段。
 
-**Step 1 完成后初始化 report.json：**
-```bash
-python3 {baseDir}/scripts/validate_step.py --init '{"stock_code":"<code>","stock_name":"<name>","current_price":<price>,"news_data":<Step2的news_data>}' --stock-code <code>
-```
-
 **每步 validate 命令格式：**
 ```bash
 echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step <步骤名> --stock-code <code> --save
@@ -180,7 +175,10 @@ Step 13: 组装 JSON → 生成 PDF
 - `summary` 字段不得为空，最少 50 字
 - 如果实在搜不到，设置 `news_list` 为空数组但 `sentiment` 设为 "暂无数据"
 
-**⚠️ 重要**：`news_data` 变量必须在 Step 13 组装 JSON 时写入 `"news_data"` 字段，否则 PDF 报告中新闻部分会为空。
+**Step 2 完成后，初始化 report.json**（此时 Step 1 的 stock_data 和 Step 2 的 news_data 都已就绪）：
+```bash
+python3 {baseDir}/scripts/validate_step.py --init '{"stock_code":"<code>","stock_name":"<name>","current_price":<price>,"news_data":<news_data变量>}' --stock-code <code>
+```
 
 ---
 
