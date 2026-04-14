@@ -200,6 +200,31 @@ class ReportGenerator:
         import copy
         result = copy.deepcopy(result)
 
+        # 0. 路径归一化：AI agent 可能把数据写到顶层而非标准嵌套路径，
+        #    这里统一搬到标准路径，确保下游读取的确定性。
+        _NORMALIZE_MAP = [
+            # (顶层源 key,              标准嵌套路径)
+            ("tech_analyst",             "parallel_analysis.tech_analyst"),
+            ("fundamentals_analyst",     "parallel_analysis.fundamentals_analyst"),
+            ("news_analyst",             "parallel_analysis.news_analyst"),
+            ("social_analyst",           "parallel_analysis.social_analyst"),
+            ("bull_debate_r1",           "investment_debate.bull_r1"),
+            ("bear_debate_r1",           "investment_debate.bear_r1"),
+            ("bull_debate_r2",           "investment_debate.bull_r2"),
+            ("bear_debate_r2",           "investment_debate.bear_r2"),
+        ]
+        for src_key, dst_path in _NORMALIZE_MAP:
+            src_val = result.get(src_key)
+            if not src_val or not isinstance(src_val, dict):
+                continue
+            # 解析 dst_path（最多两级：parent.child）
+            parts = dst_path.split(".")
+            parent_key, child_key = parts[0], parts[1]
+            parent = result.setdefault(parent_key, {})
+            # 仅当标准路径为空时才搬入
+            if not parent.get(child_key):
+                parent[child_key] = src_val
+
         # 1. 修复新闻摘要
         news_analyst = result.get("parallel_analysis", {}).get("news_analyst", {})
         # schema: news_list 在顶层 news_data 下，注入到 news_analyst
