@@ -15,7 +15,7 @@ metadata:
       bins: ["python3"]
 ---
 
-# TradingAgents-CN Skill v3
+# TradingAgents-CN Skill
 
 多智能体股票分析框架。Agent **在主进程中串行**完成 13 步分析，参照 TradingAgents 论文架构：
 四位分析师（各自独立调用）→ 多空辩论（2轮）→ 研究管理者裁决 → 交易员 → 风控三方辩论 → 投资组合经理最终决策 → PDF 报告。

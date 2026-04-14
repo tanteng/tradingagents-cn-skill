@@ -574,10 +574,10 @@ class ReportGenerator:
                 debate_rounds.append({"bull": self._extract_debate_text(_inv_debate.get("bull_r2", "")), "bear": self._extract_debate_text(_inv_debate.get("bear_r2", ""))})
         if not debate_rounds:
             debate_rounds = result.get("debate", {}).get("rounds", [])
-        # v3 兼容：如果 rounds 中的 bull/bear 是纯文本字符串，直接渲染
+        # 兼容：如果 rounds 中的 bull/bear 是纯文本字符串，直接渲染
         _has_text_debate = debate_rounds and isinstance(debate_rounds[0].get("bull", ""), str) and len(debate_rounds[0].get("bull", "")) > 50
         if _has_text_debate:
-            # v3 模式：纯文本辩论，直接渲染
+            # 纯文本模式：纯文本辩论，直接渲染
             for i, r in enumerate(debate_rounds):
                 round_num = r.get("round", i + 1)
                 bull_text = r.get("bull", "")
