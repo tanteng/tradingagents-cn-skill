@@ -15,7 +15,8 @@
   ▼
 ┌─────────────────────────────────────────┐
 │  阶段一：数据获取                          │
-│  结构化提取 → web_search 获取新闻          │
+│  结构化提取 → 搜索工具获取新闻              │
+│  → validate --init 初始化 report.json     │
 └──────────────────┬──────────────────────┘
                    ▼
 ┌─────────────────────────────────────────┐
@@ -69,9 +70,10 @@ echo '<输出>' | python3 validate_step.py --step <name> --stock-code <code> --s
 ```
 
 **设计原则**：
-- 所有 JSON key 使用英文（不允许中文 key）
+- 所有 JSON key 使用英文（不允许中文 key），PDF 渲染时通过 KEY_CN_MAP 映射为中文显示
 - Prompt 定义 schema → validate 验证 → pdf_generator 读取，三端对齐
 - 每步 validate --save 自动写入 report.json，Agent 不需要手动组装大 JSON
+- pdf_generator 内置路径归一化，不管上游数据存放位置如何都能正确读取
 - 辩论步骤也输出结构化 JSON（含 debate_text Markdown 长文本字段）
 
 ## 核心特性
@@ -86,6 +88,7 @@ echo '<输出>' | python3 validate_step.py --step <name> --stock-code <code> --s
 | **五级评级** | 买入 / 增持 / 持有 / 减持 / 卖出 |
 | **中文 PDF 报告** | Markdown 渲染，支持粗体/标题/列表/表格 |
 | **validate --save** | 每步自动验证 + 写入 report.json |
+| **路径归一化** | _preprocess_data 自动修正数据存放位置，消除随机缺失 |
 | **全局重试** | LLM 失败等 5 秒重试最多 2 次，格式错误带 hint 重试 |
 
 ## 文件结构
@@ -95,7 +98,7 @@ tradingagents-cn-skill/
 ├── SKILL.md                          # Skill 定义（Agent 12 步流程）
 ├── README.md
 ├── _meta.json
-├── references/                       # 各角色 Prompt（定义 JSON schema）
+├── references/                       # 各角色 Prompt
 │   ├── tech_prompt.md                # 技术/市场分析师
 │   ├── fundamentals_prompt.md        # 基本面分析师
 │   ├── news_prompt.md                # 新闻分析师
@@ -106,7 +109,7 @@ tradingagents-cn-skill/
 │   ├── risk_aggressive_prompt.md     # 激进型风控
 │   ├── risk_conservative_prompt.md   # 保守型风控
 │   ├── risk_neutral_prompt.md        # 中立型风控
-│   ├── risk_manager_prompt.md        # 投资组合经理
+│   └── risk_manager_prompt.md        # 投资组合经理
 └── scripts/
     ├── validate_step.py              # 验证 + --save 写入 report.json
     ├── generate_report.py            # PDF 生成入口（--input）
@@ -117,8 +120,8 @@ tradingagents-cn-skill/
 ## 工作流程
 
 ```
-Step 1:   结构化数据提取 → validate --init（创建 report.json）
-Step 2:   web_search 获取新闻 → validate --save
+Step 1:   结构化数据提取（LLM 提取 stock_data）
+Step 2:   搜索工具获取新闻 → validate --init 初始化 report.json
 Step 3:   技术分析师 → validate --step tech --save
 Step 4:   基本面分析师 → validate --step fundamentals --save
 Step 5:   新闻分析师 → validate --step news --save
