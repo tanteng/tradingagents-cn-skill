@@ -1,7 +1,7 @@
 
 # TradingAgents-CN Skill
 
-基于 [TradingAgents](https://github.com/TauricResearch/TradingAgents) 论文架构的中文股票多智能体分析框架。通过 4 位分析师 + 2 轮多空辩论 + 风控三方辩论 + 五级评级，生成专业中文 PDF 分析报告。
+基于 [TradingAgents](https://github.com/TauricResearch/TradingAgents) 论文架构的中文股票多智能体分析框架。通过 3 位分析师 + 2 轮多空辩论 + 风控三方辩论 + 五级评级，生成专业中文 PDF 分析报告。
 
 > 灵感来源：[TradingAgents: Multi-Agents LLM Financial Trading Framework](https://arxiv.org/abs/2412.20138)（Yijia Xiao et al., 2025）
 
@@ -19,9 +19,9 @@
 └──────────────────┬──────────────────────┘
                    ▼
 ┌─────────────────────────────────────────┐
-│  阶段二：四位分析师                        │
+│  阶段二：三位分析师                        │
 │  技术分析师 → 基本面分析师                  │
-│  → 新闻分析师 → 情绪分析师                  │
+│  → 新闻分析师                               │
 │  每步: LLM → validate --save → report.json │
 └──────────────────┬──────────────────────┘
                    ▼
@@ -78,7 +78,7 @@ echo '<输出>' | python3 validate_step.py --step <name> --stock-code <code> --s
 
 | 特性 | 说明 |
 |------|------|
-| **4 位专业分析师** | 技术/市场、基本面、新闻、社交媒体/情绪 |
+| **3 位专业分析师** | 技术/市场、基本面、新闻 |
 | **2 轮多空辩论** | Bull/Bear 互相引用对方论点进行对话式辩论 |
 | **研究管理者裁决** | 辩论裁判，"不要默认 Hold"，必须给出明确立场 |
 | **交易员计划** | 具体数字的买入价/目标价/止损价 |
@@ -92,14 +92,13 @@ echo '<输出>' | python3 validate_step.py --step <name> --stock-code <code> --s
 
 ```
 tradingagents-cn-skill/
-├── SKILL.md                          # Skill 定义（Agent 10 步流程）
+├── SKILL.md                          # Skill 定义（Agent 12 步流程）
 ├── README.md
 ├── _meta.json
 ├── references/                       # 各角色 Prompt（定义 JSON schema）
 │   ├── tech_prompt.md                # 技术/市场分析师
 │   ├── fundamentals_prompt.md        # 基本面分析师
 │   ├── news_prompt.md                # 新闻分析师
-│   ├── social_prompt.md              # 社交媒体/情绪分析师
 │   ├── bull_prompt.md                # 看多研究员
 │   ├── bear_prompt.md                # 看空研究员
 │   ├── manager_prompt.md             # 研究管理者
@@ -124,18 +123,17 @@ Step 2:   web_search 获取新闻 → validate --save
 Step 3:   技术分析师 → validate --step tech --save
 Step 4:   基本面分析师 → validate --step fundamentals --save
 Step 5:   新闻分析师 → validate --step news --save
-Step 6:   情绪分析师 → validate --step social --save
-Step 7:   看多 R1 → validate --step bull_debate --round 1 --save
+Step 6:   看多 R1 → validate --step bull_debate --round 1 --save
           看空 R1 → validate --step bear_debate --round 1 --save
-Step 8:   看多 R2 → validate --step bull_debate --round 2 --save
+Step 7:   看多 R2 → validate --step bull_debate --round 2 --save
           看空 R2 → validate --step bear_debate --round 2 --save
-Step 9:   研究管理者 → validate --step manager --save
-          交易员 → validate --step trader --save
-          激进风控 → validate --step risk_aggressive --save
+Step 8:   研究管理者 → validate --step manager --save
+Step 9:   交易员 → validate --step trader --save
+Step 10:  激进风控 → validate --step risk_aggressive --save
           保守风控 → validate --step risk_conservative --save
           中立风控 → validate --step risk_neutral --save
-          投资组合经理 → validate --step portfolio_manager --save
-Step 10:  python3 generate_report.py --input results/{code}_report.json → PDF
+Step 11:  投资组合经理 → validate --step portfolio_manager --save
+Step 12:  python3 generate_report.py --input results/{code}_report.json → PDF
 ```
 
 ## 与 TradingAgents 原版的对比

@@ -207,7 +207,6 @@ class ReportGenerator:
             ("tech_analyst",             "parallel_analysis.tech_analyst"),
             ("fundamentals_analyst",     "parallel_analysis.fundamentals_analyst"),
             ("news_analyst",             "parallel_analysis.news_analyst"),
-            ("social_analyst",           "parallel_analysis.social_analyst"),
             ("bull_debate_r1",           "investment_debate.bull_r1"),
             ("bear_debate_r1",           "investment_debate.bear_r1"),
             ("bull_debate_r2",           "investment_debate.bull_r2"),
@@ -344,7 +343,6 @@ class ReportGenerator:
         risk = result["risk_debate"]
         parallel = result["parallel_analysis"]
         news_analyst = parallel["news_analyst"]
-        social_analyst = parallel["social_analyst"]
 
         # 生成新闻列表 HTML
         news_list_html = ""
@@ -385,18 +383,6 @@ class ReportGenerator:
                 _news_sentiment = f"{_top[0]}（{_top[1]}/{len(_sentiments)}条）"
             else:
                 _news_sentiment = "暂无数据"
-
-        # 生成社交媒体 HTML
-        social_html = ""
-        if social_analyst.get("platforms"):
-            for platform in social_analyst["platforms"]:
-                social_html += f"<li>{platform.get('name', '')}: {platform.get('sentiment', '')} (热度: {platform.get('heat', '')})</li>"
-        else:
-            social_html = f"""
-            <li>雪球讨论热度: {social_analyst.get('platforms', [{}])[0].get('heat', '暂无数据') if social_analyst.get('platforms') else '暂无数据'}</li>
-            <li>东方财富股吧情绪: {social_analyst.get('sentiment_score', '暂无数据')}</li>
-            <li>机构评级汇总: 暂无机构评级数据，需对接券商数据源</li>
-            """
 
         # 生成技术分析 HTML
         tech_analyst_data = parallel.get("tech_analyst", {})
@@ -791,20 +777,14 @@ class ReportGenerator:
 </p>
         </div>
 
-        <!-- 新闻与情绪分析 -->
+        <!-- 新闻分析 -->
         <div class="section">
-            <h2>新闻与情绪分析</h2>
+            <h2>新闻分析</h2>
             <div class="news-section">
                 <div class="sentiment-summary">
                     <strong>新闻情绪:</strong> {_news_sentiment} | 共 {len(news_analyst.get("news_list", []))} 条新闻
                 </div>
                 {news_list_html}
-            </div>
-            <div class="analyst-card" style="margin-top:15px;">
-                <h4>社交媒体情绪</h4>
-                <ul>
-                    {social_html}
-                </ul>
             </div>
         </div>
 

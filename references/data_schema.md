@@ -1,6 +1,6 @@
 # 最终报告 JSON Schema（完整类型定义）
 
-Agent 执行 13 步后，将所有结果组装为以下 JSON 结构传给 `generate_report.py`。
+Agent 执行 12 步后，将所有结果组装为以下 JSON 结构传给 `generate_report.py`。
 
 **核心原则**：每个字段的类型是确定的，不存在"可能是 string 也可能是 dict"的情况。
 
@@ -20,27 +20,26 @@ Agent 执行 13 步后，将所有结果组装为以下 JSON 结构传给 `gener
   "parallel_analysis": {
     "tech_analyst": "object — Step 3 的完整 JSON 输出（见下方）",
     "fundamentals_analyst": "object — Step 4 的完整 JSON 输出（见下方）",
-    "news_analyst": "object — Step 5 的完整 JSON 输出（见下方）",
-    "social_analyst": "object — Step 6 的完整 JSON 输出（见下方）"
+    "news_analyst": "object — Step 5 的完整 JSON 输出（见下方）"
   },
 
   "investment_debate": {
-    "bull_r1": "object — Step 7 看多R1 的完整 JSON 输出（见下方）",
-    "bear_r1": "object — Step 7 看空R1 的完整 JSON 输出（见下方）",
-    "bull_r2": "object — Step 8 看多R2 的完整 JSON 输出（见下方）",
-    "bear_r2": "object — Step 8 看空R2 的完整 JSON 输出（见下方）"
+    "bull_r1": "object — Step 6 看多R1 的完整 JSON 输出（见下方）",
+    "bear_r1": "object — Step 6 看空R1 的完整 JSON 输出（见下方）",
+    "bull_r2": "object — Step 7 看多R2 的完整 JSON 输出（见下方）",
+    "bear_r2": "object — Step 7 看空R2 的完整 JSON 输出（见下方）"
   },
 
-  "manager_decision": "object — Step 9 研究管理者的完整 JSON 输出（见下方）",
-  "trading_plan": "object — Step 10 交易员的完整 JSON 输出（见下方）",
+  "manager_decision": "object — Step 8 研究管理者的完整 JSON 输出（见下方）",
+  "trading_plan": "object — Step 9 交易员的完整 JSON 输出（见下方）",
 
   "risk_debate": {
-    "aggressive": "object — Step 11 激进型的完整 JSON 输出（见下方）",
-    "conservative": "object — Step 11 保守型的完整 JSON 输出（见下方）",
-    "neutral": "object — Step 11 中立型的完整 JSON 输出（见下方）"
+    "aggressive": "object — Step 10 激进型的完整 JSON 输出（见下方）",
+    "conservative": "object — Step 10 保守型的完整 JSON 输出（见下方）",
+    "neutral": "object — Step 10 中立型的完整 JSON 输出（见下方）"
   },
 
-  "final_decision": "object — Step 12 投资组合经理的完整 JSON 输出（见下方）"
+  "final_decision": "object — Step 11 投资组合经理的完整 JSON 输出（见下方）"
 }
 ```
 
@@ -76,17 +75,7 @@ Agent 执行 13 步后，将所有结果组装为以下 JSON 结构传给 `gener
 | 关键催化剂 | string[] | 催化剂数组 |
 | 风险事件 | string[] | 风险事件数组 |
 
-### parallel_analysis.social_analyst（Step 6）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| report | string | 情绪分析报告（500字以上 markdown） |
-| key_points | string[] | 要点数组 |
-| sentiment_score | number | 0-1 浮点数 |
-| 情绪趋势 | string | 枚举：上升/稳定/下降 |
-| 舆情总结 | string | 50字以内 |
-
-### investment_debate.bull_r1 / bull_r2（Step 7, 8）
+### investment_debate.bull_r1 / bull_r2（Step 6, 7）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -96,7 +85,7 @@ Agent 执行 13 步后，将所有结果组装为以下 JSON 结构传给 `gener
 | confidence | number | 0-1 浮点数 |
 | risk_acknowledgement | string | 需注意的风险 |
 
-### investment_debate.bear_r1 / bear_r2（Step 7, 8）
+### investment_debate.bear_r1 / bear_r2（Step 6, 7）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -106,7 +95,7 @@ Agent 执行 13 步后，将所有结果组装为以下 JSON 结构传给 `gener
 | confidence | number | 0-1 浮点数 |
 | bull_counterpoint | string | 对多头的反驳 |
 
-### manager_decision（Step 9）
+### manager_decision（Step 8）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -117,7 +106,7 @@ Agent 执行 13 步后，将所有结果组装为以下 JSON 结构传给 `gener
 | bear_strength | string | 看空方最强论点 |
 | key_risks | string[] | 风险数组 |
 
-### trading_plan（Step 10）
+### trading_plan（Step 9）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -132,7 +121,7 @@ Agent 执行 13 步后，将所有结果组装为以下 JSON 结构传给 `gener
 | entry_criteria | string | 入场条件 |
 | exit_criteria | string | 出场条件 |
 
-### risk_debate.aggressive / conservative / neutral（Step 11）
+### risk_debate.aggressive / conservative / neutral（Step 10）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -143,7 +132,7 @@ Agent 执行 13 步后，将所有结果组装为以下 JSON 结构传给 `gener
 | stop_loss | string | 止损 |
 | key_points | string[] | 核心论点数组 |
 
-### final_decision（Step 12）
+### final_decision（Step 11）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
