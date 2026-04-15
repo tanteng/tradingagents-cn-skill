@@ -107,7 +107,6 @@ tradingagents-cn-skill/
 │   ├── risk_conservative_prompt.md   # 保守型风控
 │   ├── risk_neutral_prompt.md        # 中立型风控
 │   ├── risk_manager_prompt.md        # 投资组合经理
-│   └── data_schema.md                # 完整 JSON 数据格式定义
 └── scripts/
     ├── validate_step.py              # 验证 + --save 写入 report.json
     ├── generate_report.py            # PDF 生成入口（--input）
