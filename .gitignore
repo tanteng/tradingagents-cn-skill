@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .DS_Store
 scripts/logs/
+.clawhub/
+_meta.json
