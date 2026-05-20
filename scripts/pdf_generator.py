@@ -2,9 +2,16 @@
 """
 PDF Report Generator for Stock Analysis
 生成专业股票分析报告 PDF
+
+支持两种调用方式：
+  echo '<JSON>' | python3 generate_report.py --stdin
+  python3 generate_report.py --from-file /path/to/shared.json
 """
 
+import argparse
+import json
 import os
+import sys
 import markdown
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +32,21 @@ class ReportGenerator:
             return ""
         return markdown.markdown(text, extensions=['nl2br', 'tables'])
 
+    def generate_from_file(self, json_path: str, output_dir: Optional[str] = None) -> str:
+        """
+        从共享中间 JSON 文件生成 PDF 报告。
+
+        Args:
+            json_path: 中间层 JSON 文件路径（如 PDD_20260520_092100.json）
+            output_dir: 输出目录（可选）
+
+        Returns:
+            PDF 文件路径
+        """
+        with open(json_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return self.generate(data, output_dir=output_dir)
+
     def generate(
         self,
         analysis_result: Dict[str, Any],
@@ -35,7 +57,7 @@ class ReportGenerator:
         生成 PDF 报告
 
         Args:
-            analysis_result: StockAnalyst.analyze() 返回的结果
+            analysis_result: 从共享 JSON 读取的数据或直接传入的 dict
             output_dir: 输出目录（可选）
             template: 模板名称
 
@@ -50,9 +72,12 @@ class ReportGenerator:
         output_path.mkdir(parents=True, exist_ok=True)
 
         stock_code = analysis_result["stock_code"]
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{stock_code}_{timestamp}.pdf"
+        timestamp = analysis_result.get("timestamp", datetime.now().isoformat())
+        filename = f"{stock_code}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         pdf_path = output_path / filename
+
+        # 归一化：将共享中文结构转为旧结构，兼容 _preprocess_data 和 _generate_html
+        analysis_result = self._normalize_shared_schema(analysis_result)
 
         # 数据预处理：自动修复常见问题
         analysis_result = self._preprocess_data(analysis_result)
@@ -61,6 +86,129 @@ class ReportGenerator:
         self._html_to_pdf(html_content, pdf_path)
 
         return str(pdf_path)
+
+    def _normalize_shared_schema(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        将共享中文结构（结果.xxx）归一化为旧的英文键结构，
+        以便 _preprocess_data 和 _generate_html 无缝兼容。
+
+        共享结构：
+          结果.多头分析、结果.空头分析、结果.技术分析、...
+          news_data
+          status
+
+        旧结构：
+          parallel_analysis.bull_analyst、parallel_analysis.bear_analyst、...
+          debate、manager_decision、trading_plan、risk_debate、final_decision
+        """
+        import copy
+        result = copy.deepcopy(data)
+
+        结果 = result.get("结果", {})
+
+        # 建立中文键名 → 旧键名的映射
+        parallel_map = {
+            "多头分析": "bull_analyst",
+            "空头分析": "bear_analyst",
+            "技术分析": "tech_analyst",
+            "基本面分析": "fundamentals_analyst",
+            "新闻分析": "news_analyst",
+            "社交媒体分析": "social_analyst",
+        }
+
+        # 构建 parallel_analysis（将平铺结构转为旧嵌套结构，兼容 HTML 模板）
+        parallel = {}
+        for cn, en in parallel_map.items():
+            if cn not in 结果:
+                continue
+
+            item = 结果[cn]
+            if not isinstance(item, dict):
+                parallel[en] = item
+                continue
+
+            if en == "bull_analyst":
+                parallel[en] = {
+                    "analysis": [item.get("core_logic", "")] + item.get("bull_case", []),
+                    "bull_detail": {
+                        k: v for k, v in item.items()
+                    },
+                }
+            elif en == "bear_analyst":
+                # subagent 可能返回平铺结构 {core_logic, bear_case} 或嵌套结构 {bear_detail}
+                inner = item.get("bear_detail", item)  # 优先从 bear_detail 取，否则从顶层取
+                parallel[en] = {
+                    "analysis": [inner.get("core_logic", "")] + inner.get("bear_case", []),
+                    "bear_detail": inner,
+                }
+            elif en == "tech_analyst":
+                parallel[en] = {
+                    "analysis": [item.get("技术信号总结", "")],
+                    "technical_analysis": item,
+                }
+            elif en == "fundamentals_analyst":
+                fa = item.get("fundamentals_analysis", item)
+                analysis_text = (item.get("analysis", [""])[0] if item.get("analysis")
+                                else fa.get("综合评价", ""))
+                parallel[en] = {
+                    "analysis": [analysis_text] if analysis_text else [],
+                    "fundamentals_analysis": fa,
+                }
+            elif en == "news_analyst":
+                parallel[en] = {
+                    "analysis": [item.get("sentiment", "")],
+                    **item,
+                }
+            elif en == "social_analyst":
+                parallel[en] = {
+                    "analysis": [f"情绪评分 {item.get('sentiment_score', 'N/A')}"],
+                    **item,
+                }
+            else:
+                parallel[en] = item
+
+        if parallel:
+            result["parallel_analysis"] = parallel
+
+        # 辩论过程
+        if "辩论过程" in 结果:
+            result["debate"] = 结果["辩论过程"]
+
+        # 研究经理决策 → manager_decision
+        if "研究经理决策" in 结果:
+            result["manager_decision"] = 结果["研究经理决策"]
+
+        # 交易计划 → trading_plan
+        if "交易计划" in 结果:
+            result["trading_plan"] = 结果["交易计划"]
+
+        # 风险辩论 → risk_debate
+        if "风险辩论" in 结果:
+            risk = 结果["风险辩论"]
+            # 统一 neutral / moderate 命名
+            if "moderate" in risk and "neutral" not in risk:
+                risk["neutral"] = risk.pop("moderate")
+            result["risk_debate"] = risk
+
+        # 风险经理决策 → final_decision
+        if "风险经理决策" in 结果:
+            result["final_decision"] = 结果["风险经理决策"]
+
+        # manager decision → trading_plan.decision（如果没有）
+        manager = result.get("manager_decision", {})
+        trading = result.get("trading_plan", {})
+        if manager.get("decision") and not trading.get("decision"):
+            trading["decision"] = manager["decision"]
+            result["trading_plan"] = trading
+
+        # 确保 news_analyst 结构完整（兼容旧字段）
+        news_analyst = parallel.get("news_analyst", {})
+        if news_analyst and isinstance(news_analyst, dict):
+            # news_data 里的条目同步到 news_analyst.news_list
+            if "news_list" not in news_analyst and data.get("news_data"):
+                news_analyst["news_list"] = data["news_data"]
+
+        return result
 
     def _preprocess_data(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """预处理分析结果数据，自动修复常见问题"""
@@ -95,22 +243,24 @@ class ReportGenerator:
 
         # 3. 计算参考价格（如果缺少决策价格但有当前价格）
         current_price = result.get("current_price")
-        if current_price and trading:
+        # 复用 trading 变量，不要重新 get，否则前面设置的 reference_* 会丢失
+        if current_price and not trading.get("reference_price"):
             # 如果没有决策价格但有当前价格，计算参考价格
             if trading.get("buy_price") is None:
                 trading["reference_price"] = current_price
                 trading["reference_target"] = round(current_price * 1.10, 2)
                 trading["reference_stop"] = round(current_price * 0.95, 2)
 
-        # 4. 诚实空缺检测（优先使用明确的失败标记）
-        trading = result.get("trading_plan", {})
+        # 4. 诚实空缺检测（position_size 为 null 属于合法观望，不是数据获取失败）
+        # 只有明确为 None/空字符串 才标记为获取失败；'0%' 或带描述的字符串如 '待技术企稳' 是合法回答
 
         # 检测 position_size 是否为空缺
-        # 注意: '0%' 是合法的观望建议，不是数据获取失败
+        # 规则：None/空字符串 = 数据获取失败，'0%' = 合法观望建议
         if "_position_size_failed" in trading:
             pass
         elif trading.get("position_size") in [None, ""]:
-            trading["_position_size_failed"] = True
+            # 观望决策时 position_size 为空是合法的，不算获取失败
+            trading["_position_size_failed"] = False
         else:
             trading["_position_size_failed"] = False
 
@@ -196,11 +346,10 @@ class ReportGenerator:
         # 生成技术分析 HTML
         tech_analyst_data = parallel.get("tech_analyst", {})
         ta = tech_analyst_data.get("technical_analysis", {})
-        # 兼容两种key格式：模板期望的 vs 实际数据中的
-        trend = ta.get("趋势判断", {}) or ta.get("趋势", {}) or {}
-        indicators = ta.get("关键指标", {}) or tech_analyst_data.get("indicators", {})
-        advice = ta.get("操作建议", {}) or ta.get("建议", {})
-        tech_summary = ta.get("技术信号总结", "") or (tech_analyst_data.get("analysis", [""])[0] if tech_analyst_data.get("analysis") else "")
+        trend = ta.get("趋势判断", {})
+        indicators = ta.get("关键指标", {})
+        advice = ta.get("操作建议", {})
+        tech_summary = ta.get("技术信号总结", "") or (tech_analyst_data.get("analysis", [""])[0] if tech_analyst_data.get("analysis") else "待分析")
 
         tech_html = "<ul>"
         if trend and isinstance(trend, dict) and trend:
@@ -217,25 +366,18 @@ class ReportGenerator:
                 tech_html += f'<li style="margin-left:16px">{k}: {v}</li>'
         if tech_summary:
             tech_html += f"<li><strong>技术信号：</strong>{tech_summary}</li>"
-        if not trend and not indicators and not advice and not tech_summary:
-            tech_analyst_analysis = tech_analyst_data.get("analysis", [])
-            if tech_analyst_analysis:
-                tech_html = "<ul>"
-                for point in tech_analyst_analysis:
-                    tech_html += f"<li>{ReportGenerator._render_markdown(point)}</li>"
-            else:
-                tech_html = "<ul><li>待分析</li>"
+        if not trend and not indicators and not advice:
+            tech_html = "<ul><li>待分析</li>"
         tech_html += "</ul>"
 
         # 生成基本面分析 HTML
         fund_analyst_data = parallel.get("fundamentals_analyst", {})
         fa = fund_analyst_data.get("fundamentals_analysis", {})
-        # 兼容两种key格式
-        valuation = fa.get("估值分析", fa.get("估值", {}))
-        profitability = fa.get("盈利能力", fa.get("盈利", {}))
-        growth = fa.get("成长性", fa.get("成长", {}))
-        health = fa.get("财务健康", fa.get("财务", {}))
-        fund_summary = fa.get("综合评价", "") or (fund_analyst_data.get("analysis", [""])[0] if fund_analyst_data.get("analysis") else "")
+        valuation = fa.get("估值分析", {})
+        profitability = fa.get("盈利能力", {})
+        growth = fa.get("成长性", {})
+        health = fa.get("财务健康", {})
+        fund_summary = fa.get("综合评价", "") or (fund_analyst_data.get("analysis", [""])[0] if fund_analyst_data.get("analysis") else "待分析")
 
         fund_html = "<ul>"
         if valuation and isinstance(valuation, dict) and valuation:
@@ -263,13 +405,7 @@ class ReportGenerator:
         if fund_summary:
             fund_html += f"<li><strong>综合评价：</strong>{fund_summary}</li>"
         if not valuation and not profitability and not growth and not health:
-            fund_analyst_analysis = fund_analyst_data.get("analysis", [])
-            if fund_analyst_analysis:
-                fund_html = "<ul>"
-                for point in fund_analyst_analysis:
-                    fund_html += f"<li>{ReportGenerator._render_markdown(point)}</li>"
-            else:
-                fund_html = "<ul><li>待分析</li>"
+            fund_html = "<ul><li>待分析</li>"
         fund_html += "</ul>"
 
         # 生成辩论 HTML
@@ -420,6 +556,25 @@ class ReportGenerator:
         .no-news {{ text-align: center; color: #999; padding: 20px; font-size: 12px; }}
 
         .sentiment-summary {{ background: #e8f5e9; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-size: 12px; }}
+
+        /* 辩论样式 */
+        .debate-round {{ margin-bottom: 25px; }}
+        .debate-round-title {{ color: #1a73e8; font-size: 14px; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #ddd; }}
+        .debate-columns {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }}
+        .debate-column {{ padding: 12px; border-radius: 8px; }}
+        .debate-column.bull {{ background: #e3f2fd; border-left: 4px solid #1976d2; }}
+        .debate-column.bear {{ background: #fce4ec; border-left: 4px solid #c62828; }}
+        .debate-column-header {{ font-weight: bold; margin-bottom: 8px; font-size: 12px; }}
+        .bull .debate-column-header {{ color: #1976d2; }}
+        .bear .debate-column-header {{ color: #c62828; }}
+        .debate-argument {{ margin-bottom: 10px; padding: 8px; background: rgba(255,255,255,0.7); border-radius: 6px; }}
+        .debate-argument-title {{ font-weight: bold; font-size: 11px; margin-bottom: 4px; }}
+        .debate-argument-content {{ font-size: 11px; line-height: 1.5; }}
+        .bull .debate-argument-title {{ color: #1976d2; }}
+        .bear .debate-argument-title {{ color: #c62828; }}
+        .debate-argument ul {{ padding-left: 16px; margin: 4px 0; }}
+        .debate-argument li {{ font-size: 11px; margin-bottom: 3px; }}
+        .no-data {{ color: #999; font-size: 12px; text-align: center; padding: 20px; }}
     </style>
 </head>
 <body>
@@ -437,7 +592,7 @@ class ReportGenerator:
         <div class="section">
             <h2>执行摘要</h2>
             <div class="decision-box">
-                <div class="big">{final.get("rating", final.get("final_recommendation", "持有"))}</div>
+                <div class="big">{final["final_recommendation"]}</div>
                 <div class="sub">风险等级: {final["risk_level"]} | 投资期限: {final["investment_horizon"]}</div>
             </div>
             <p><strong>核心逻辑:</strong> {manager["rationale"]}</p>
@@ -460,7 +615,7 @@ class ReportGenerator:
                     <div class="value">{self._format_price(trading.get("stop_loss"), "不适用", trading.get("reference_stop"))}</div>
                 </div>
             </div>
-            <p><strong>仓位建议:</strong> {'<span style="color:#c62828">数据获取失败</span>' if trading.get('_position_size_failed') else ('观望 <span style="color:#888">(等待技术面企稳后再考虑入场)</span>' if trading.get('position_size') == '0%' else trading.get('position_size', ''))}
+            <p><strong>仓位建议:</strong> {'<span style="color:#c62828">数据获取失败</span>' if trading.get('_position_size_failed') else ('观望 <span style="color:#888">(等待技术面企稳后再考虑入场)</span>' if trading.get('position_size') in ('0%', None, '') else trading.get('position_size', ''))}
 </p>
             <p><strong>入场条件:</strong> {trading.get("entry_criteria", "")}</p>
             <p><strong>出场条件:</strong> {'<span style="color:#c62828">数据获取失败</span>' if trading.get('_exit_criteria_failed') else trading.get('exit_criteria', '')}
@@ -629,23 +784,3 @@ class ReportGenerator:
             f"HTML 报告已保存至: {html_path}"
         )
 
-
-if __name__ == "__main__":
-    from analyst_multi import StockAnalyst
-
-    # 测试带真实新闻数据
-    analyst = StockAnalyst()
-    news_data = [
-        {"title": "苹果发布 Q4 财报，营收超预期", "date": "2024-11-01", "source": "彭博", "summary": "苹果公司第四季度营收同比增长 8.1%，iPhone 销量强劲", "sentiment": "偏多"},
-        {"title": "iPhone 16 销量创历史新高", "date": "2024-10-28", "source": "路透", "summary": "新一代 iPhone 需求旺盛，出货量超预期 20%", "sentiment": "偏多"},
-        {"title": "欧盟对苹果处以 18 亿欧元罚款", "date": "2024-10-25", "source": "BBC", "summary": "因 App Store 垄断行为被欧盟罚款", "sentiment": "偏空"},
-    ]
-    result = analyst.analyze(
-        stock_code="AAPL",
-        text_description="苹果公司 Q4 财报分析",
-        news_data=news_data
-    )
-
-    generator = ReportGenerator()
-    pdf_path = generator.generate(result)
-    print(f"PDF 报告已生成: {pdf_path}")

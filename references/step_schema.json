@@ -1,0 +1,125 @@
+{
+  "version": "1.0",
+  "description": "TradingAgents-CN 各步骤的中英文键名映射和字段约束配置",
+  "step_mappings": {
+    "多头分析": {
+      "en": "bull_analyst",
+      "description": "多头分析师",
+      "result_path": "结果.多头分析",
+      "status_key": "多头分析",
+      "required_fields": ["core_logic", "bull_case"],
+      "confidence_field": "confidenceindex"
+    },
+    "空头分析": {
+      "en": "bear_analyst",
+      "description": "空头分析师",
+      "result_path": "结果.空头分析",
+      "status_key": "空头分析",
+      "required_fields": ["core_logic", "bear_case"],
+      "confidence_field": "confidenceindex"
+    },
+    "技术分析": {
+      "en": "tech_analyst",
+      "description": "技术分析师",
+      "result_path": "结果.技术分析",
+      "status_key": "技术分析",
+      "required_fields": ["趋势判断", "关键指标"],
+      "confidence_field": null
+    },
+    "基本面分析": {
+      "en": "fundamentals_analyst",
+      "description": "基本面分析师",
+      "result_path": "结果.基本面分析",
+      "status_key": "基本面分析",
+      "required_fields": ["估值分析", "盈利能力"],
+      "confidence_field": null
+    },
+    "新闻分析": {
+      "en": "news_analyst",
+      "description": "新闻分析师",
+      "result_path": "结果.新闻分析",
+      "status_key": "新闻分析",
+      "required_fields": ["news_list"],
+      "confidence_field": null
+    },
+    "社交媒体分析": {
+      "en": "social_analyst",
+      "description": "社交媒体分析师",
+      "result_path": "结果.社交媒体分析",
+      "status_key": "社交媒体分析",
+      "required_fields": ["sentiment_score"],
+      "confidence_field": "sentiment_score"
+    },
+    "辩论过程": {
+      "en": "debate",
+      "description": "多空辩论",
+      "result_path": "结果.辩论过程",
+      "status_key": "辩论过程",
+      "required_fields": ["rounds"],
+      "confidence_field": null
+    },
+    "研究经理决策": {
+      "en": "manager",
+      "description": "研究经理",
+      "result_path": "结果.研究经理决策",
+      "status_key": "研究经理决策",
+      "required_fields": ["decision", "rationale"],
+      "confidence_field": null
+    },
+    "交易计划": {
+      "en": "trader",
+      "description": "交易员",
+      "result_path": "结果.交易计划",
+      "status_key": "交易计划",
+      "required_fields": ["decision", "position_size"],
+      "confidence_field": null
+    },
+    "风险辩论": {
+      "en": "risk_debate",
+      "description": "三方风险辩论",
+      "result_path": "结果.风险辩论",
+      "status_key": "风险辩论",
+      "required_fields": ["aggressive", "neutral", "conservative"],
+      "confidence_field": null
+    },
+    "风险经理决策": {
+      "en": "risk_manager",
+      "description": "风险经理",
+      "result_path": "结果.风险经理决策",
+      "status_key": "风险经理决策",
+      "required_fields": ["final_recommendation", "risk_level", "risk_assessment"],
+      "confidence_field": null
+    },
+    "新闻数据": {
+      "en": "news_data",
+      "description": "新闻搜索",
+      "result_path": "news_data",
+      "status_key": "新闻数据",
+      "required_fields": [],
+      "confidence_field": null
+    },
+    "股票数据": {
+      "en": "stock_data",
+      "description": "股票数据提取",
+      "result_path": "结果.股票数据",
+      "status_key": "股票数据",
+      "required_fields": ["stock_code", "stock_name"],
+      "confidence_field": null
+    }
+  },
+  "reverse_mapping": {
+    "bull_analyst": "多头分析",
+    "bear_analyst": "空头分析",
+    "tech_analyst": "技术分析",
+    "fundamentals_analyst": "基本面分析",
+    "news_analyst": "新闻分析",
+    "social_analyst": "社交媒体分析",
+    "debate": "辩论过程",
+    "manager": "研究经理决策",
+    "trader": "交易计划",
+    "risk_debate": "风险辩论",
+    "risk_manager": "风险经理决策",
+    "news_data": "新闻数据",
+    "stock_data": "股票数据"
+  }
+}

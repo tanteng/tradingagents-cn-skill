@@ -23,6 +23,57 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
+import argparse
+import json
+import os
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+
+# ============================================================
+# 配置：从 step_schema.json 加载映射（而非硬编码）
+# ============================================================
+
+SCRIPT_DIR = Path(__file__).parent
+LOG_DIR = SCRIPT_DIR / "logs"
+
+# 加载 step_schema.json
+SCHEMA_FILE = SCRIPT_DIR.parent / "references" / "step_schema.json"
+
+def _load_schema() -> dict:
+    try:
+        with open(SCHEMA_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+_SCHEMA = _load_schema()
+
+STEP_CN_TO_EN = _SCHEMA.get("reverse_mapping", {})  # en → cn → 反转 = cn → en
+# _SCHEMA.reverse_mapping 是 en→cn，c n→en 需要反转
+step_mappings = _SCHEMA.get("step_mappings", {})
+STEP_CN_TO_EN = {v: k for k, v in _SCHEMA.get("reverse_mapping", {}).items()}
+# STEP_CN_TO_EN: 中文 → 英文
+if not STEP_CN_TO_EN and step_mappings:
+    STEP_CN_TO_EN = {cn: info["en"] for cn, info in step_mappings.items()}
+STEP_EN_TO_CN = {v: k for k, v in STEP_CN_TO_EN.items()}
+
+# 中文步骤名 → 平铺字段路径（用于新结构验证）
+CN_STEP_TO_EN_FIELDS = {
+    cn: info["required_fields"]
+    for cn, info in step_mappings.items()
+    if info.get("required_fields")
+}
+
+
+def normalize_step(step: str) -> str:
+    """将中文步骤名规范化为英文步骤名。"""
+    return STEP_CN_TO_EN.get(step, step)
+
+
 # ============================================================
 # 配置
 # ============================================================
@@ -48,19 +99,42 @@ RETRY_LIMITS = {
 
 # 各步骤必填字段定义（支持嵌套字段用 . 分隔）
 # 注意：部分字段有条件必填，见 validate_fields() 函数中的条件逻辑
+#
+# 英文步骤名 → 英文字段路径（如 bull_analyst → bull_detail.core_logic）
+# 中文步骤名 → 中文结构字段路径（如 多头分析 → core_logic）
 REQUIRED_FIELDS = {
-    "parse_input": ["stock_code", "stock_name"],
+    # 英文步骤（旧结构，bull_detail 嵌套）
     "bull_analyst": ["bull_detail.core_logic", "bull_detail.bull_case"],
     "bear_analyst": ["bear_detail.core_logic", "bear_detail.bear_case"],
+    # 中文步骤（新结构，顶层字段）
+    "多头分析": ["core_logic", "bull_case"],
+    "空头分析": ["core_logic", "bear_case"],
+    # 通用（不区分中英文）
+    "parse_input": ["stock_code", "stock_name"],
     "tech_analyst": ["technical_analysis"],
     "fundamentals_analyst": ["fundamentals_analysis"],
     "news_analyst": ["news_list"],
     "social_analyst": ["sentiment_score"],
     "debate": ["rounds"],
-    "manager": ["recommendation", "rationale"],  # 5-tier: Buy/Overweight/Hold/Underweight/Sell,
+    "manager": ["decision", "rationale"],
     "trader": ["decision", "position_size"],  # buy_price/target_price/stop_loss 由条件逻辑处理
-    "risk_debate": ["aggressive", "neutral", "conservative"],  # 3派: aggressive/neutral/conservative,
-    "risk_manager": ["rating", "risk_level", "investment_horizon", "executive_summary", "investment_thesis"],  # 5-tier rating,
+    "risk_debate": ["aggressive", "moderate", "conservative"],
+    "risk_manager": ["final_recommendation", "risk_level", "risk_assessment"],
+}
+
+# 中文提示（补充说明，主要用于中文步骤名场景）
+FIELD_HINTS_CN = {
+    "多头分析": '输出必须包含 bull_detail 对象，其中 core_logic 为字符串，bull_case 为非空数组',
+    "空头分析": '输出必须包含 bear_detail 对象，其中 core_logic 为字符串，bear_case 为非空数组',
+    "技术分析": '输出必须包含 technical_analysis 对象',
+    "基本面分析": '输出必须包含 fundamentals_analysis 对象',
+    "新闻分析": '输出必须包含 news_list 数组',
+    "社交媒体分析": '输出必须包含 sentiment_score 数字字段',
+    "辩论过程": '输出必须包含 rounds 数组',
+    "研究经理决策": '输出必须包含 decision 和 rationale 字段',
+    "交易计划": "输出必须包含 decision（买入/持有/观望）和 position_size 字符串字段。buy_price/target_price/stop_loss 仅在 decision=买入 时必填（数字类型）；持有/观望时允许为 null，但必须提供 reference_price、reference_target、reference_stop 作为参考价格区间",
+    "风险辩论": '输出必须包含 aggressive、moderate、conservative 三个对象',
+    "风险经理决策": '输出必须包含 final_recommendation、risk_level、risk_assessment 字段',
 }
 
 # 各步骤的字段提示（用于重试时附加到 prompt）
@@ -73,10 +147,10 @@ FIELD_HINTS = {
     "news_analyst": '输出必须包含 news_list 数组',
     "social_analyst": '输出必须包含 sentiment_score 数字字段',
     "debate": '输出必须包含 rounds 数组',
-    "manager": '输出必须包含 recommendation（买入/增持/持有/减持/卖出）和 rationale 字段。请使用5档评级体系',
+    "manager": '输出必须包含 decision 和 rationale 字段',
     "trader": "输出必须包含 decision（买入/持有/观望）和 position_size 字符串字段。buy_price/target_price/stop_loss 仅在 decision=买入 时必填（数字类型）；持有/观望时允许为 null，但必须提供 reference_price、reference_target、reference_stop 作为参考价格区间",
-    "risk_debate": '输出必须包含 aggressive、neutral、conservative 三个对象',
-    "risk_manager": '输出必须包含 rating（Buy/Overweight/Hold/Underweight/Sell）、risk_level（低/中/高）、investment_horizon、executive_summary、investment_thesis 字段。使用5档评级体系',
+    "risk_debate": '输出必须包含 aggressive、moderate、conservative 三个对象',
+    "risk_manager": '输出必须包含 final_recommendation、risk_level、risk_assessment 字段',
 }
 
 # 各步骤的默认值（Agent 全部重试失败后使用）
@@ -154,13 +228,12 @@ DEFAULT_VALUES = {
         "rounds": [{"round": 1, "bull_points": ["待辩论"], "bear_points": ["待辩论"]}],
     },
     "manager": {
-        "recommendation": "持有",
+        "decision": "持有",
         "rationale": "多空力量均衡，建议持有观望",
-        "strategic_actions": "建议观望，等待方向明确",
         "_decision_failed": True,
     },
     "trader": {
-        "recommendation": "持有",
+        "decision": "持有",
         "buy_price": None,
         "target_price": None,
         "stop_loss": None,
@@ -170,21 +243,17 @@ DEFAULT_VALUES = {
         "_trader_failed": True,
     },
     "risk_debate": {
-        "aggressive": {"position": "激进派", "position_size": "25%-40%", "target_return": "20%+", "stop_loss": "-10%"},
-        "neutral": {"position": "中性派", "position_size": "15%-20%", "target_return": "10%-15%", "stop_loss": "-7%"},
-        "conservative": {"position": "保守派", "position_size": "5%-10%", "target_return": "5%-8%", "stop_loss": "-5%"},
+        "aggressive": {"stance": "待评估", "points": []},
+        "moderate": {"stance": "待评估", "points": []},
+        "conservative": {"stance": "待评估", "points": []},
     },
     "risk_manager": {
-        "rating": "Hold",
-        "risk_level": "中",
-        "investment_horizon": "中期(1-6个月)",
-        "executive_summary": "多空力量均衡，建议观望等待方向明确",
-        "investment_thesis": "基于辩论结果，多空双方论点势均力敌，建议保持中性立场",
-        "price_target": None,
-        "time_horizon": "3-6个月",
+        "final_recommendation": "持有",
+        "risk_level": "中等",
         "_risk_assessment_failed": True,
         "risk_assessment": {"市场风险": "中等", "流动性风险": "低", "波动性风险": "中等"},
-        "suitable_investors": ["稳健型"],
+        "suitable_investors": ["稳健型", "积极型"],
+        "investment_horizon": "3-6个月",
         "monitoring_points": ["季度财报发布", "行业政策变化", "技术面破位情况"],
     },
 }
@@ -260,7 +329,13 @@ def validate_fields(step: str, data: Dict) -> Tuple[bool, Optional[str]]:
     特殊条件逻辑：
     - trader 步骤：buy_price/target_price/stop_loss 仅在 decision="买入" 时必填
     """
-    required = REQUIRED_FIELDS.get(step, [])
+    # 优先使用中文步骤名对应的英文字段路径（兼容旧的嵌套结构）
+    # 例如：step=多头分析 → 用 bull_detail.core_logic 而非 core_logic
+    # step=bull_analyst → 用 bull_detail.core_logic（原有逻辑）
+    if step in CN_STEP_TO_EN_FIELDS:
+        required = CN_STEP_TO_EN_FIELDS[step]
+    else:
+        required = REQUIRED_FIELDS.get(step, [])
 
     for field in required:
         if field == "trader":
@@ -364,8 +439,9 @@ class StepLogger:
 # ============================================================
 
 def get_default_value(step: str) -> Dict:
-    """获取步骤的默认值"""
-    return DEFAULT_VALUES.get(step, {"_failed": True, "error": f"No default for {step}"})
+    """获取步骤的默认值，支持中文步骤名。"""
+    normalized = normalize_step(step)
+    return DEFAULT_VALUES.get(normalized, {"_failed": True, "error": f"No default for {step}"})
 
 
 def main():
@@ -375,8 +451,7 @@ def main():
     parser.add_argument(
         "--step",
         required=True,
-        choices=list(REQUIRED_FIELDS.keys()),
-        help="Analysis step name",
+        help="Analysis step name (Chinese or English)",
     )
     parser.add_argument(
         "--stock-code",
@@ -396,9 +471,13 @@ def main():
     )
     args = parser.parse_args()
 
+    # 归一化步骤名（中文 → 英文）
+    original_step = args.step  # 保留原始输入（可能是中文）
+    normalized_step = normalize_step(original_step)
+
     # 如果请求默认值，直接输出
     if args.default:
-        default = get_default_value(args.step)
+        default = get_default_value(normalized_step)
         json.dump(default, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
         sys.exit(0)
@@ -409,7 +488,7 @@ def main():
         error_obj = {
             "error": "empty_input",
             "field": None,
-            "step": args.step,
+            "step": original_step,
             "hint": "LLM 输出为空，请重新调用",
         }
         json.dump(error_obj, sys.stderr, ensure_ascii=False)
@@ -425,16 +504,18 @@ def main():
     if data is None:
         # JSON 解析失败
         error_msg = "无法从 LLM 输出中提取有效 JSON"
-        hint = FIELD_HINTS.get(args.step, "请以纯 JSON 格式返回，不要包含 markdown 代码块")
+        hint_cn = FIELD_HINTS_CN.get(original_step)
+        hint_en = FIELD_HINTS.get(normalized_step)
+        hint = hint_cn or hint_en or "请以纯 JSON 格式返回，不要包含 markdown 代码块"
         error_obj = {
             "error": "json_parse_failed",
             "field": None,
-            "step": args.step,
+            "step": original_step,
             "hint": f"上次输出无法解析为 JSON。{hint}。请返回纯 JSON，不要用 ```json 代码块包裹。",
         }
 
         logger.log(
-            step=args.step,
+            step=original_step,
             attempt=args.attempt,
             success=False,
             input_length=len(raw_input),
@@ -447,20 +528,30 @@ def main():
         sys.exit(1)
 
     # 验证必填字段
-    is_valid, missing_field = validate_fields(args.step, data)
+    # 如果原始步骤名是中文，则用中文字段路径验证；否则用英文步骤名查表
+    if original_step in STEP_CN_TO_EN:
+        # 中文步骤名，用平铺字段验证（core_logic 而非 bull_detail.core_logic）
+        is_valid, missing_field = validate_fields(original_step, data)
+        used_hint = FIELD_HINTS_CN.get(original_step) or FIELD_HINTS.get(normalized_step)
+    else:
+        # 英文步骤名，用英文步骤名验证
+        is_valid, missing_field = validate_fields(normalized_step, data)
+        used_hint = FIELD_HINTS.get(normalized_step)
 
     if not is_valid:
         error_msg = f"Missing required field: {missing_field}"
-        hint = FIELD_HINTS.get(args.step, f"请确保输出包含 {missing_field} 字段")
+        hint_cn = FIELD_HINTS_CN.get(original_step)
+        hint_en = FIELD_HINTS.get(normalized_step)
+        hint = hint_cn or hint_en or f"请确保输出包含 {missing_field} 字段"
         error_obj = {
             "error": "missing_field",
             "field": missing_field,
-            "step": args.step,
+            "step": original_step,
             "hint": f"上次输出缺少必填字段 {missing_field}。{hint}",
         }
 
         logger.log(
-            step=args.step,
+            step=original_step,
             attempt=args.attempt,
             success=False,
             input_length=len(raw_input),
@@ -476,7 +567,7 @@ def main():
     output_str = json.dumps(data, ensure_ascii=False, indent=2)
 
     logger.log(
-        step=args.step,
+        step=original_step,
         attempt=args.attempt,
         success=True,
         input_length=len(raw_input),

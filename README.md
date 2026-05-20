@@ -1,210 +1,97 @@
-# TradingAgents-CN Skill
 
-多智能体股票分析报告生成框架。借鉴 [TradingAgents](https://github.com/TauricResearch/TradingAgents) 项目架构，通过 6 个分析师并行分析 + 多空辩论 + 交易计划 + 风险评估，生成专业的股票分析 PDF 报告。
+# tradingagents-cn-skill
 
-**版本**: 3.0.0
-
----
-
-## 核心特性
-
-- **6 个分析师并行执行** — 利用 subagent 并行处理，显著提升分析速度
-- **5 档评级体系** — Buy/Overweight/Hold/Underweight/Sell，与原始 TradingAgents 项目一致
-- **多空辩论机制** — 2 轮辩论后由研究经理给出最终决策
-- **三方风险辩论** — 激进派/中性派/保守派多角度风险评估
-- **LLM 输出验证** — 每步 LLM 调用后通过 `validate_step.py` 验证，确保数据质量
-- **中文输出** — 所有分析内容使用中文
-
----
+基于 OpenClaw Skill 框架的股票分析工具，通过多智能体辩论机制生成专业股票分析 PDF 报告。
 
 ## 架构
 
+**Agent 驱动模式**：所有 LLM 调用由 Agent 框架完成，脚本只负责 JSON 验证和 PDF 生成。
+
 ```
-主 Agent (当前 session)
+Agent (串行 12 步 LLM 调用)
   │
-  ├── Step 1-2: 获取股票数据 + 新闻 (串行)
+  ├── validate_step.py (每步验证 JSON + 日志)
   │
-  ├── sessions_spawn 6个分析师并行 (fork):
-  │     ├── bull_analyst (LLM + validate)
-  │     ├── bear_analyst (LLM + validate)
-  │     ├── tech_analyst (LLM + validate)
-  │     ├── fundamentals_analyst (LLM + validate)
-  │     ├── news_analyst (LLM + validate)
-  │     └── social_analyst (LLM + validate)
-  │
-  ├── 汇合结果，继续串行:
-  ├── Step 9:  多空辩论 + 研究经理决策
-  ├── Step 10: 交易员计划
-  ├── Step 11: 风险辩论 + 风险经理评估
-  └── Step 12: 生成 PDF
+  └── generate_report.py (最终生成 PDF)
 ```
 
----
+## 功能特性
 
-## 目录结构
+- **6 个专业分析师**：多头 / 空头 / 技术 / 基本面 / 新闻 / 社交媒体
+- **辩论决策机制**：研究经理主持多空辩论，给出买入/卖出/持有决策
+- **交易计划制定**：包含目标价位和仓位建议
+- **三方风险评估**：激进/中性/保守三派辩论
+- **专业 PDF 报告**：生成完整分析报告
+- **自动重试**：LLM 输出验证失败时自动重试，带错误提示
+- **完善日志**：每步输入/输出/验证结果均记录到日志文件
+
+## 文件结构
 
 ```
 tradingagents-cn-skill/
-├── SKILL.md                      # Skill 定义文件 (OpenClaw skill)
-├── README.md                     # 本文件
+├── SKILL.md                    # Skill 定义（Agent 12 步流程）
+├── README.md                   # 本文件
+├── _meta.json                  # 元数据
+├── references/                 # 各角色 Prompt 文件
+│   ├── bull_prompt.md
+│   ├── bear_prompt.md
+│   ├── tech_prompt.md
+│   ├── fundamentals_prompt.md
+│   ├── news_prompt.md
+│   ├── social_prompt.md
+│   ├── manager_prompt.md
+│   ├── trader_prompt.md
+│   ├── risk_debate_prompt.md
+│   ├── risk_manager_prompt.md
+│   └── data_schema.md
 ├── scripts/
-│   ├── generate_report.py        # PDF 报告生成脚本
-│   ├── pdf_generator.py          # PDF 生成器 (HTML → PDF)
-│   ├── validate_step.py          # LLM 输出验证脚本
-│   └── logs/                     # 分析日志目录
-├── references/
-│   ├── bull_prompt.md            # 多头分析师 prompt
-│   ├── bear_prompt.md            # 空头分析师 prompt
-│   ├── tech_prompt.md            # 技术分析师 prompt
-│   ├── fundamentals_prompt.md    # 基本面分析师 prompt
-│   ├── news_prompt.md            # 新闻分析师 prompt
-│   ├── social_prompt.md          # 社交媒体分析师 prompt
-│   ├── manager_prompt.md         # 研究经理 prompt (5档评级)
-│   ├── trader_prompt.md          # 交易员 prompt
-│   ├── risk_manager_prompt.md    # 风险经理 prompt (5档评级)
-│   ├── risk_debate_prompt.md     # 三方风险辩论 prompt
-│   └── data_schema.md            # JSON 数据格式定义
-└── reports/                      # 生成的 PDF 报告目录
+│   ├── validate_step.py        # JSON 验证 + 日志工具
+│   ├── generate_report.py      # PDF 生成入口
+│   ├── pdf_generator.py        # PDF 生成核心
+│   └── logs/                   # 分析日志目录
+└── assets/                     # 静态资源
 ```
 
----
+## 工作流程
 
-## 与原始 TradingAgents 项目的差异
-
-| 特性 | 原始项目 | 本 Skill |
-|-----|---------|---------|
-| 执行方式 | LangGraph 图编排 | Shell 脚本 + subagent |
-| 输出语言 | 英文 | 中文 |
-| 分析师数量 | 4 个 (market/sentiment/news/fundamentals) | 6 个 (+ tech/social) |
-| 评级体系 | 5 档 (Buy/Overweight/Hold/Underweight/Sell) | 5 档 (对齐) |
-| 辩论轮次 | 1 轮 | 2 轮 |
-| 验证方式 | Pydantic + structured output | validate_step.py 脚本 |
-| 数据源 | yfinance | westock-data CLI |
-| 记忆系统 | TradingMemoryLog (历史决策) | 暂未实现 |
-
----
-
-## 安装
-
-### 前置要求
-
-- Python 3.8+
-- OpenClaw agent 系统
-- `westock-data` 包 (用于获取股票数据)
-
-### 安装 skill
-
-通过 ClawHub 安装：
-
-```bash
-openclaw skill install tradingagents-cn-skill
 ```
-
-或手动复制到 `~/.openclaw/skills/skills/tradingagents-cn-skill/`
-
-### 安装 westock-data
-
-```bash
-pip install westock-data-clawhub
+Step 1:  解析输入 → text_description
+Step 2:  web_search 获取新闻 → news_data
+Step 3:  多头分析师 → validate → bull_analyst
+Step 4:  空头分析师 → validate → bear_analyst
+Step 5:  技术分析师 → validate → tech_analyst
+Step 6:  基本面分析师 → validate → fundamentals_analyst
+Step 7:  新闻分析师 → validate → news_analyst
+Step 8:  社交媒体分析师 → validate → social_analyst
+Step 9:  多空辩论 + 研究经理决策 → validate
+Step 10: 交易员计划 → validate
+Step 11: 风险辩论 + 风险经理评估 → validate
+Step 12: 组装 JSON → 生成 PDF
 ```
-
----
-
-## 使用方法
-
-### 通过 OpenClaw CLI
-
-```bash
-openclaw agent --message "分析一下腾讯 00700.HK" --verbose off --json
-```
-
-### 通过 Skill 触发
-
-当用户消息匹配以下场景时自动激活：
-- "分析股票"、"生成股票报告"
-- "股票技术分析"、"股票基本面分析"
-- "股票风险评估"、"股票买卖建议"
-- 提供截图或代码进行分析
-
----
-
-## 输出示例
-
-PDF 报告包含：
-- **执行摘要** — 核心结论 (5档评级)、关键价格、风险等级
-- **技术分析** — MA5/MA10/RSI/MACD 等指标
-- **基本面分析** — 营收、净利润、ROE、PE 等
-- **新闻情绪** — 最新新闻摘要及情绪判断
-- **多空辩论** — 2 轮辩论记录
-- **交易计划** — 买入价、目标价、止损价、仓位建议
-- **风险评估** — 三方风险辩论 + 风险经理最终决策
-
----
-
-## 数据格式
-
-### manager_decision (研究经理决策)
-
-```json
-{
-  "recommendation": "买入/增持/持有/减持/卖出",
-  "rationale": "核心逻辑",
-  "strategic_actions": "交易员执行步骤"
-}
-```
-
-### final_decision (风险经理最终决策)
-
-```json
-{
-  "rating": "Buy/Overweight/Hold/Underweight/Sell",
-  "risk_level": "低/中/高",
-  "investment_horizon": "短期(1-4周)/中期(1-6个月)/长期(6个月以上)",
-  "executive_summary": "简洁行动计划",
-  "investment_thesis": "详细推理依据",
-  "price_target": 数字或null,
-  "time_horizon": "3-6个月",
-  "risk_assessment": {...},
-  "suitable_investors": ["激进型", "稳健型"],
-  "monitoring_points": [...]
-}
-```
-
----
 
 ## 调试
 
-### 查看日志
-
+### CLI 触发完整流程
 ```bash
-cat ~/.openclaw/skills/skills/tradingagents-cn-skill/scripts/logs/latest.log
+openclaw agent --message "分析一下 PDD" --verbose on --json
 ```
 
-### 验证 LLM 输出
-
+### 单步验证测试
 ```bash
-echo '{"bull_detail":{"core_logic":"test","bull_case":["point1"]}}' | \
-  python3 ~/.openclaw/skills/skills/tradingagents-cn-skill/scripts/validate_step.py \
-  --step bull_analyst
+echo '{"bull_detail":{"core_logic":"test","bull_case":["point1"]}}' | python3 scripts/validate_step.py --step bull_analyst
 ```
 
 ### 获取默认值
-
 ```bash
-python3 ~/.openclaw/skills/skills/tradingagents-cn-skill/scripts/validate_step.py \
-  --step bull_analyst --default
+python3 scripts/validate_step.py --step bull_analyst --default
 ```
 
----
+### 日志查看
+```bash
+cat scripts/logs/latest.log
+```
 
-## License
+## 版本历史
 
-MIT License
-
----
-
-## 参考
-
-- [TradingAgents (原始项目)](https://github.com/TauricResearch/TradingAgents)
-- [OpenClaw 文档](https://docs.openclaw.ai)
-- [ClawHub](https://clawhub.ai)
+- **v2.0.0** — 统一为 Agent 驱动模式，新增 validate_step.py，删除独立 LLM 调用脚本
+- **v1.1.0** — 六分析师并行执行优化，JSON 解析重试机制

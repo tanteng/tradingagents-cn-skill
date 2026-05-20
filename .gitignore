@@ -1,5 +1,6 @@
+scripts/reports/
+scripts/intermediate/
 __pycache__/
 *.pyc
-*.pdf
-.clawhub/
-reports/
+.DS_Store
+scripts/logs/
