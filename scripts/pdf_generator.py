@@ -128,11 +128,11 @@ class ReportGenerator:
                 continue
 
             if en == "bull_analyst":
+                # 兼容 subagent 返回的两种结构：扁平 {core_logic, bull_case,...} 或包裹 {bull_detail: {...}}
+                bull_item = item.get("bull_detail", item)
                 parallel[en] = {
-                    "analysis": [item.get("core_logic", "")] + item.get("bull_case", []),
-                    "bull_detail": {
-                        k: v for k, v in item.items()
-                    },
+                    "analysis": [bull_item.get("core_logic", "")] + bull_item.get("bull_case", []),
+                    "bull_detail": bull_item,
                 }
             elif en == "bear_analyst":
                 # subagent 可能返回平铺结构 {core_logic, bear_case} 或嵌套结构 {bear_detail}
@@ -142,9 +142,11 @@ class ReportGenerator:
                     "bear_detail": inner,
                 }
             elif en == "tech_analyst":
+                # 兼容两种结构：扁平 {趋势判断, 关键指标, 技术信号总结} 或包裹 {technical_analysis: {...}}
+                tech_item = item.get("technical_analysis", item)
                 parallel[en] = {
-                    "analysis": [item.get("技术信号总结", "")],
-                    "technical_analysis": item,
+                    "analysis": [tech_item.get("技术信号总结", "待分析")],
+                    "technical_analysis": tech_item,
                 }
             elif en == "fundamentals_analyst":
                 fa = item.get("fundamentals_analysis", item)
@@ -170,26 +172,39 @@ class ReportGenerator:
         if parallel:
             result["parallel_analysis"] = parallel
 
-        # 辩论过程
+        # 辩论过程 → debate.rounds（legacy rounds 格式）
         if "辩论过程" in 结果:
             result["debate"] = 结果["辩论过程"]
-
         # 研究经理决策 → manager_decision
         if "研究经理决策" in 结果:
             result["manager_decision"] = 结果["研究经理决策"]
-
         # 交易计划 → trading_plan
         if "交易计划" in 结果:
             result["trading_plan"] = 结果["交易计划"]
-
-        # 风险辩论 → risk_debate
+        # 风险辩论 → risk_debate（aggressive/moderate/conservative 三派）
         if "风险辩论" in 结果:
-            risk = 结果["风险辩论"]
-            # 统一 neutral / moderate 命名
+            risk = dict(结果["风险辩论"])
             if "moderate" in risk and "neutral" not in risk:
                 risk["neutral"] = risk.pop("moderate")
             result["risk_debate"] = risk
-
+            # 如果 debate.rounds 不存在，构造伪 rounds 使 HTML 辩论区能渲染
+            if not result.get("debate", {}).get("rounds"):
+                result["debate"] = {
+                    "rounds": [
+                        {
+                            "bull_detail": {
+                                "激进派目标收益": risk.get("aggressive", {}).get("target_return", "N/A"),
+                                "激进派仓位": risk.get("aggressive", {}).get("position_size", "N/A"),
+                                "激进派止损": risk.get("aggressive", {}).get("stop_loss", "N/A"),
+                            },
+                            "bear_detail": {
+                                "保守派目标收益": risk.get("conservative", {}).get("target_return", "N/A"),
+                                "保守派仓位": risk.get("conservative", {}).get("position_size", "N/A"),
+                                "保守派止损": risk.get("conservative", {}).get("stop_loss", "N/A"),
+                            },
+                        }
+                    ]
+                }
         # 风险经理决策 → final_decision
         if "风险经理决策" in 结果:
             result["final_decision"] = 结果["风险经理决策"]
