@@ -124,14 +124,14 @@ REQUIRED_FIELDS = {
 
 # 中文提示（补充说明，主要用于中文步骤名场景）
 FIELD_HINTS_CN = {
-    "多头分析": '输出必须包含 bull_detail 对象，其中 core_logic 为字符串，bull_case 为非空数组',
-    "空头分析": '输出必须包含 bear_detail 对象，其中 core_logic 为字符串，bear_case 为非空数组',
+    "多头分析": '输出必须包含 bull_detail 对象，其中 core_logic 为字符串（≥20字），bull_case 为非空数组（每个论点≥50字）',
+    "空头分析": '输出必须包含 bear_detail 对象，其中 core_logic 为字符串（≥20字），bear_case 为非空数组（每个论点≥50字）',
     "技术分析": '输出必须包含 technical_analysis 对象',
     "基本面分析": '输出必须包含 fundamentals_analysis 对象',
     "新闻分析": '输出必须包含 news_list 数组',
     "社交媒体分析": '输出必须包含 sentiment_score 数字字段',
     "辩论过程": '输出必须包含 rounds 数组',
-    "研究经理决策": '输出必须包含 decision 和 rationale 字段',
+    "研究经理决策": '输出必须包含 decision 和 rationale 字段（rationale ≥30字）',
     "交易计划": "输出必须包含 decision（买入/持有/观望）和 position_size 字符串字段。buy_price/target_price/stop_loss 仅在 decision=买入 时必填（数字类型）；持有/观望时允许为 null，但必须提供 reference_price、reference_target、reference_stop 作为参考价格区间",
     "风险辩论": '输出必须包含 aggressive、moderate、conservative 三个对象',
     "风险经理决策": '输出必须包含 final_recommendation、risk_level、risk_assessment 字段',
@@ -140,17 +140,34 @@ FIELD_HINTS_CN = {
 # 各步骤的字段提示（用于重试时附加到 prompt）
 FIELD_HINTS = {
     "parse_input": '输出必须包含 stock_code（股票代码）和 stock_name（股票名称）字符串字段，以及可选的 current_price、technical_indicators、fundamentals 等',
-    "bull_analyst": '输出必须包含 bull_detail 对象，其中 core_logic 为字符串，bull_case 为非空数组',
-    "bear_analyst": '输出必须包含 bear_detail 对象，其中 core_logic 为字符串，bear_case 为非空数组',
+    "bull_analyst": '输出必须包含 bull_detail 对象，其中 core_logic 为字符串（≥20字），bull_case 为非空数组（每个论点≥50字）',
+    "bear_analyst": '输出必须包含 bear_detail 对象，其中 core_logic 为字符串（≥20字），bear_case 为非空数组（每个论点≥50字）',
     "tech_analyst": '输出必须包含 technical_analysis 对象',
     "fundamentals_analyst": '输出必须包含 fundamentals_analysis 对象',
     "news_analyst": '输出必须包含 news_list 数组',
     "social_analyst": '输出必须包含 sentiment_score 数字字段',
     "debate": '输出必须包含 rounds 数组',
-    "manager": '输出必须包含 decision 和 rationale 字段',
+    "manager": '输出必须包含 decision 和 rationale 字段（rationale ≥30字）',
     "trader": "输出必须包含 decision（买入/持有/观望）和 position_size 字符串字段。buy_price/target_price/stop_loss 仅在 decision=买入 时必填（数字类型）；持有/观望时允许为 null，但必须提供 reference_price、reference_target、reference_stop 作为参考价格区间",
     "risk_debate": '输出必须包含 aggressive、moderate、conservative 三个对象',
     "risk_manager": '输出必须包含 final_recommendation、risk_level、risk_assessment 字段',
+}
+
+# ============================================================
+# 内容质量约束（最小字数）
+# ============================================================
+MIN_CONTENT_LENGTH = {
+    "bull_analyst": {"core_logic": 20, "bull_case": 50, "risk_alert": 15},
+    "bear_analyst": {"core_logic": 20, "bear_case": 50},
+    "tech_analyst": {"技术信号总结": 50, "关键指标": 30},
+    "fundamentals_analyst": {"综合评价": 80, "估值分析": 30},
+    "news_analyst": {"news_list": 20},  # 每条 news 摘要 ≥20字
+    "social_analyst": {"sentiment_score": 0},
+    "debate": {"rounds": 0},
+    "manager": {"decision": 0, "rationale": 30},
+    "trader": {"position_size": 5},
+    "risk_debate": {"aggressive": 20, "moderate": 20, "conservative": 20},
+    "risk_manager": {"final_recommendation": 0, "risk_level": 0, "risk_assessment": 20},
 }
 
 # 各步骤的默认值（Agent 全部重试失败后使用）
@@ -320,6 +337,59 @@ def extract_json(text: str) -> Optional[Dict]:
 # ============================================================
 # 字段验证
 # ============================================================
+
+def check_content_quality(step: str, data: Dict) -> Tuple[bool, Optional[str]]:
+    """
+    检查内容质量（字数下限）。
+    返回 (is_valid, error_msg)
+    """
+    # 归一化步骤名
+    normalized = normalize_step(step)
+    constraints = MIN_CONTENT_LENGTH.get(normalized, {})
+
+    # 需要先展开嵌套结构（如 bull_detail）到顶层
+    if normalized in ("bull_analyst", "bear_analyst"):
+        inner = data.get(normalized.replace("analyst", "detail"), {})
+        if inner:
+            work_data = {**data, **inner}
+        else:
+            work_data = data
+    elif normalized == "tech_analyst":
+        inner = data.get("technical_analysis", {})
+        work_data = {**data, **inner} if inner else data
+    elif normalized == "fundamentals_analyst":
+        inner = data.get("fundamentals_analysis", {})
+        work_data = {**data, **inner} if inner else data
+    else:
+        work_data = data
+
+    for field, min_len in constraints.items():
+        if min_len <= 0:
+            continue
+
+        # 获取字段值
+        value = work_data.get(field)
+        if value is None:
+            continue  # 字段缺失由 validate_fields 处理
+
+        # 数组字段：检查每个元素
+        if isinstance(value, list):
+            total = sum(len(str(item)) for item in value)
+            if total < min_len:
+                return False, f"{field} 内容总字数不足（{total}字 < {min_len}字）"
+        # 字典字段：转为字符串后检查字数
+        elif isinstance(value, dict):
+            str_val = str(value)
+            total = len(str_val)
+            if total < min_len:
+                return False, f"{field} 内容过短（{total}字 < {min_len}字）"
+        # 字符串字段
+        elif isinstance(value, str):
+            if len(value) < min_len:
+                return False, f"{field} 内容过短（{len(value)}字 < {min_len}字）"
+
+    return True, None
+
 
 def validate_fields(step: str, data: Dict) -> Tuple[bool, Optional[str]]:
     """
@@ -556,6 +626,32 @@ def main():
             success=False,
             input_length=len(raw_input),
             error=error_msg,
+            raw_first_500=raw_input[:500],
+        )
+
+        json.dump(error_obj, sys.stderr, ensure_ascii=False)
+        sys.stderr.write("\n")
+        sys.exit(1)
+
+    # 验证内容质量（字数下限）
+    is_quality_ok, quality_msg = check_content_quality(
+        original_step if original_step in STEP_CN_TO_EN else normalized_step,
+        data
+    )
+    if not is_quality_ok:
+        error_obj = {
+            "error": "content_too_short",
+            "field": None,
+            "step": original_step,
+            "hint": f"内容质量不达标：{quality_msg}。请补充详细内容，不要只输出关键词或短语。",
+        }
+
+        logger.log(
+            step=original_step,
+            attempt=args.attempt,
+            success=False,
+            input_length=len(raw_input),
+            error=quality_msg,
             raw_first_500=raw_input[:500],
         )
 

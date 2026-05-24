@@ -531,23 +531,56 @@ class ReportGenerator:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>股票分析报告 - {stock_code}</title>
     <style>
+        @page {{
+            size: A4;
+            margin: 15mm;
+        }}
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; line-height: 1.6; color: #333; font-size: 12px; }}
+        body {{ font-family: "DejaVu Sans", "WenQuanYi Micro Hei", "SimSun", sans-serif; line-height: 1.6; color: #333; font-size: 12px; }}
         .container {{ max-width: 800px; margin: 0 auto; padding: 30px; }}
         .header {{ text-align: center; margin-bottom: 30px; border-bottom: 2px solid #1a73e8; padding-bottom: 15px; }}
         .header h1 {{ color: #1a73e8; font-size: 24px; margin-bottom: 8px; }}
         .header .meta {{ color: #666; font-size: 11px; }}
         .section {{ margin-bottom: 25px; }}
         .section h2 {{ color: #1a73e8; font-size: 16px; border-left: 4px solid #1a73e8; padding-left: 10px; margin-bottom: 12px; }}
-        .decision-box {{ background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: center; }}
+        .decision-box {{
+            background: #f5f5f5;
+            padding: 15px;
+            margin-bottom: 15px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }}
         .decision-box .big {{ font-size: 28px; font-weight: bold; color: #1a73e8; }}
         .decision-box .sub {{ color: #666; margin-top: 8px; font-size: 11px; }}
-        .target-prices {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0; }}
-        .price-card {{ background: #f5f5f5; padding: 12px; border-radius: 8px; text-align: center; }}
+        .target-prices {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 15px 0;
+        }}
+        .price-card {{
+            flex: 1;
+            min-width: 120px;
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }}
         .price-card .label {{ color: #666; font-size: 10px; }}
         .price-card .value {{ font-size: 18px; font-weight: bold; color: #1a73e8; }}
-        .analyst-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
-        .analyst-card {{ background: #f9f9f9; padding: 12px; border-radius: 8px; border-left: 3px solid #1a73e8; }}
+        .analyst-grid {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }}
+        .analyst-card {{
+            flex: 1;
+            min-width: 280px;
+            background: #f9f9f9;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid #1a73e8;
+        }}
         .analyst-card h4 {{ color: #1a73e8; margin-bottom: 6px; font-size: 12px; }}
         .analyst-card ul {{ padding-left: 18px; font-size: 11px; }}
         .risk-table {{ width: 100%; border-collapse: collapse; font-size: 11px; }}
@@ -562,7 +595,7 @@ class ReportGenerator:
         .news-item:last-child {{ margin-bottom: 0; }}
         .news-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }}
         .news-title {{ font-weight: bold; color: #333; font-size: 12px; flex: 1; }}
-        .news-sentiment {{ font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #f0f0f0; }}
+        .news-sentiment {{ font-size: 10px; padding: 2px 8px; background: #f0f0f0; border: 1px solid #ddd; }}
         .news-meta {{ font-size: 10px; color: #888; margin-bottom: 6px; }}
         .news-date {{ margin-right: 15px; }}
         .news-summary {{ font-size: 11px; color: #555; line-height: 1.5; }}
@@ -575,14 +608,23 @@ class ReportGenerator:
         /* 辩论样式 */
         .debate-round {{ margin-bottom: 25px; }}
         .debate-round-title {{ color: #1a73e8; font-size: 14px; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #ddd; }}
-        .debate-columns {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }}
-        .debate-column {{ padding: 12px; border-radius: 8px; }}
+        .debate-columns {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }}
+        .debate-column {{
+            flex: 1;
+            min-width: 280px;
+            padding: 12px;
+            border-radius: 8px;
+        }}
         .debate-column.bull {{ background: #e3f2fd; border-left: 4px solid #1976d2; }}
         .debate-column.bear {{ background: #fce4ec; border-left: 4px solid #c62828; }}
         .debate-column-header {{ font-weight: bold; margin-bottom: 8px; font-size: 12px; }}
         .bull .debate-column-header {{ color: #1976d2; }}
         .bear .debate-column-header {{ color: #c62828; }}
-        .debate-argument {{ margin-bottom: 10px; padding: 8px; background: rgba(255,255,255,0.7); border-radius: 6px; }}
+        .debate-argument {{ margin-bottom: 10px; padding: 8px; background: #f0f0f0; border: 1px solid #ddd; }}
         .debate-argument-title {{ font-weight: bold; font-size: 11px; margin-bottom: 4px; }}
         .debate-argument-content {{ font-size: 11px; line-height: 1.5; }}
         .bull .debate-argument-title {{ color: #1976d2; }}

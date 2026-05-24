@@ -97,6 +97,26 @@ echo "中间文件: $JSON_FILE"
 # SocialAgent: sessions_spawn(task="社交媒体分析...", env={JSON_FILE, ...})
 ```
 
+**主 Agent 轮询等待所有分析师完成**：
+
+```bash
+# Step 2 完成后，轮询等待 6 个分析师全部 done
+echo "等待 6 个分析师完成..."
+for i in {1..30}; do  # 最多等 30 次（约 2.5 分钟）
+  DONE_COUNT=$(python3 {baseDir}/scripts/intermediate_shared.py \
+    --stock-code {股票代码} --status 2>/dev/null | grep -c " done$" || echo 0)
+  if [ "$DONE_COUNT" -ge 6 ]; then
+    echo "所有分析师完成（$DONE_COUNT/6），进入研究经理决策"
+    break
+  fi
+  echo "进度: $DONE_COUNT/6 已完成，等待..."
+  sleep 5  # 每 5 秒轮询一次
+done
+if [ "$DONE_COUNT" -lt 6 ]; then
+  echo "警告: 等待超时，$DONE_COUNT/6 分析师完成，部分数据可能缺失"
+fi
+```
+
 **Subagent 指令模板**（每个 agent 替换自己的部分）：
 
 ```
@@ -117,26 +137,59 @@ echo "中间文件: $JSON_FILE"
 ### Step 3: 研究经理决策
 
 ```bash
-# 读取共享文件，构建分析师汇总
-TEXT=$(cat $JSON_FILE | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-# 构建 text_description
-...")
-NEWS=$(cat $JSON_FILE | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get('news_data',[]),ensure_ascii=False))")
-
-# 调用 LLM → validate_step → 写入
-python3 {baseDir}/scripts/intermediate_shared.py \
-  --write --step 研究经理决策 --data '<JSON>'
+# 等待研究经理完成（单步串行，直接等待即可）
+echo "等待研究经理决策..."
+for i in {1..20}; do
+  STATUS=$(python3 {baseDir}/scripts/intermediate_shared.py --stock-code {股票代码} --status 2>/dev/null)
+  if echo "$STATUS" | grep -q "研究经理决策.*done"; then
+    echo "研究经理决策完成，进入交易员计划"
+    break
+  fi
+  sleep 3
+done
 ```
 
 ### Step 4: 交易员计划
 
 从共享文件读取 `研究经理决策` 和 `current_price`，调用 LLM → 验证 → 写入 `结果.交易计划`。
 
+```bash
+# 等待交易员完成
+for i in {1..20}; do
+  STATUS=$(python3 {baseDir}/scripts/intermediate_shared.py --stock-code {股票代码} --status 2>/dev/null)
+  if echo "$STATUS" | grep -q "交易计划.*done"; then
+    echo "交易员计划完成，进入风险辩论"
+    break
+  fi
+  sleep 3
+done
+```
+
 ### Step 5: 风险辩论 + 风险经理决策
 
 同理，依次 spawn 或串行执行，将结果写入 `结果.风险辩论` 和 `结果.风险经理决策`。
+
+```bash
+# 等待风险辩论完成
+for i in {1..20}; do
+  STATUS=$(python3 {baseDir}/scripts/intermediate_shared.py --stock-code {股票代码} --status 2>/dev/null)
+  if echo "$STATUS" | grep -q "风险辩论.*done"; then
+    echo "风险辩论完成，进入风险经理决策"
+    break
+  fi
+  sleep 3
+done
+
+# 等待风险经理决策完成
+for i in {1..20}; do
+  STATUS=$(python3 {baseDir}/scripts/intermediate_shared.py --stock-code {股票代码} --status 2>/dev/null)
+  if echo "$STATUS" | grep -q "风险经理决策.*done"; then
+    echo "风险经理决策完成，进入 PDF 生成"
+    break
+  fi
+  sleep 3
+done
+```
 
 ### Step 6: 生成 PDF
 
@@ -192,6 +245,26 @@ python3 {baseDir}/scripts/generate_report.py \
 
 ### 测试验证工具
 ```bash
-echo '{"core_logic":"test","bull_case":["p1","p2"]}' | \
+# 测试验证工具（含内容质量检测）
+echo '{"bull_detail": {"core_logic": "测试", "bull_case": ["测试"]}}' | \
   python3 {baseDir}/scripts/validate_step.py --step bull_analyst
+
+# 获取默认值
+python3 {baseDir}/scripts/validate_step.py --step bull_analyst --default
 ```
+
+---
+
+## 内容质量要求
+
+validate_step.py 在字段验证通过后，还会检查内容质量（字数下限）：
+
+| 步骤 | 字段 | 最小字数 |
+|------|------|---------|
+| bull_analyst | core_logic | ≥20字 |
+| bull_analyst | bull_case 总计 | ≥50字 |
+| bear_analyst | core_logic | ≥20字 |
+| bear_analyst | bear_case 总计 | ≥50字 |
+| manager | rationale | ≥30字 |
+
+如果内容过短，验证会失败并返回 `content_too_short` 错误，hint 中会说明具体不足原因。Subagent 应根据错误提示补充内容后重试。
