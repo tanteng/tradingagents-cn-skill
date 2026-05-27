@@ -162,6 +162,46 @@ for attempt in {1..$MAX_RETRIES}; do
 done
 ```
 
+#### 3.4.4 限流（Rate Limiting）解决方案
+
+**问题根源：** 6 个 subagent 并行同时调用 `web_search`，触发 API 限流
+
+**解决方案：分级处理**
+
+1. **主 agent 预搜索（首选）**
+   - 主 agent 在 spawn subagent 前，先执行一次 web_search 收集数据
+   - 写入 `news_data` 字段，subagent 直接复用，不再调用 web_search
+   - 从根本上消除并发限流问题
+
+2. **错峰启动（备选）**
+   - 如果预搜索失败或数据不足，subagent 需要自己搜索时
+   - 采用错峰启动：每 3-5 秒 spawn 一个 subagent，而非同时 6 个
+   - 示例：
+   ```bash
+   for i in {1..6}; do
+     spawn_subagent $i &
+     sleep 4  # 错峰 4 秒
+   done
+   ```
+
+3. **自适应重试**
+   - subagent 遇到限流错误时，自动等待 10 秒后重试
+   - 最多重试 2 次，超过则标记为 failed 并记录原因
+   - 主 agent 收集所有结果后，对 failed 的 subagent 进行补跑
+
+```bash
+# 自适应重试示例
+for attempt in {1..$MAX_RETRIES}; do
+  result=$(spawn_subagent_with_timeout 120)
+  if echo "$result" | grep -q "rate_limit"; then
+    echo "触发限流，等待 10 秒后重试..."
+    sleep 10
+    continue
+  fi
+  break
+done
+```
+
 ---
 
 ## 4. 实施步骤
