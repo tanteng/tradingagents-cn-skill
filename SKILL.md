@@ -207,15 +207,36 @@ python3 {baseDir}/scripts/generate_report.py --from-file $JSON_FILE
 | 新闻搜索 | news_data | news_data | summary ≤50字，sentiment ∈{偏多,偏空,中性} |
 | 多头分析 | bull_analyst | 结果.多头分析 | confidenceindex 0-1 |
 | 空头分析 | bear_analyst | 结果.空头分析 | 同上 |
-| 技术分析 | tech_analyst | 结果.技术分析 | 趋势判断键=短期/中期/长期 |
+| 技术分析 | tech_analyst | 结果.技术分析 | 趋势判断键=短期/中期/长期，必须包含支撑位/压力位/技术指标 |
 | 基本面分析 | fundamentals_analyst | 结果.基本面分析 | 估值分析键必须用中文 |
 | 新闻分析 | news_analyst | 结果.新闻分析 | news_list 每条有 summary |
 | 社交媒体分析 | social_analyst | 结果.社交媒体分析 | sentiment_score 0-1 |
-| 辩论过程 | debate | 结果.辩论过程 | rounds 是数组 |
+| 辩论过程 | debate | 结果.辩论过程 | 必须包含 `rounds` 数组，每轮含 `bull_detail`/`bear_detail` 结构 |
 | 研究经理决策 | manager | 结果.研究经理决策 | decision ∈{买入,卖出,持有} |
 | 交易计划 | trader | 结果.交易计划 | buy/target/stop 必须是数字或 null |
-| 风险辩论 | risk_debate | 结果.风险辩论 | 三派结构固定 |
+| 风险辩论 | risk_debate | 结果.风险辩论 | 三派结构：aggressive/neutral/conservative |
 | 风险经理决策 | risk_manager | 结果.风险经理决策 | risk_level ∈{低,中,高} |
+
+## 字段映射对照表
+
+`intermediate_shared.py --write --step <step>` 中的 `--step` 参数：
+| --step 参数 | 实际写入路径 | 说明 |
+|------------|-------------|------|
+| stock_data | 结果.股票数据 | 初始化时写入 |
+| news_data | news_data | 新闻原始数据 |
+| bull_analyst | 结果.多头分析 | 多头分析师结论 |
+| bear_analyst | 结果.空头分析 | 空头分析师结论 |
+| tech_analyst | 结果.技术分析 | 技术分析师结论 |
+| fundamentals_analyst | 结果.基本面分析 | 基本面分析师结论 |
+| news_analyst | 结果.新闻分析 | 新闻分析师结论 |
+| social_analyst | 结果.社交媒体分析 | 社交媒体分析师结论 |
+| debate | 结果.辩论过程 | 必须包含 `rounds` 数组 |
+| manager | 结果.研究经理决策 | decision ∈{买入,卖出,持有} |
+| trader | 结果.交易计划 | buy/target/stop 必须是数字或 null |
+| risk_debate | 结果.风险辩论 | 三派结构：aggressive/neutral/conservative |
+| risk_manager | 结果.风险经理决策 | risk_level ∈{低,中,高} |
+
+**注意**：SKILL.md 中旧写法 `--write-stock-data` 不存在，正确写法是 `--write --step stock_data`。
 
 ---
 
