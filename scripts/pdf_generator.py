@@ -187,24 +187,8 @@ class ReportGenerator:
             if "moderate" in risk and "neutral" not in risk:
                 risk["neutral"] = risk.pop("moderate")
             result["risk_debate"] = risk
-            # 如果 debate.rounds 不存在，构造伪 rounds 使 HTML 辩论区能渲染
-            if not result.get("debate", {}).get("rounds"):
-                result["debate"] = {
-                    "rounds": [
-                        {
-                            "bull_detail": {
-                                "激进派目标收益": risk.get("aggressive", {}).get("target_return", "N/A"),
-                                "激进派仓位": risk.get("aggressive", {}).get("position_size", "N/A"),
-                                "激进派止损": risk.get("aggressive", {}).get("stop_loss", "N/A"),
-                            },
-                            "bear_detail": {
-                                "保守派目标收益": risk.get("conservative", {}).get("target_return", "N/A"),
-                                "保守派仓位": risk.get("conservative", {}).get("position_size", "N/A"),
-                                "保守派止损": risk.get("conservative", {}).get("stop_loss", "N/A"),
-                            },
-                        }
-                    ]
-                }
+            # 注意：如果 debate.rounds 不存在，不构造假数据。
+            # 真实辩论数据应由 subagent 正常写入，若缺失则 PDF 显示"辩论数据未写入"
         # 风险经理决策 → final_decision
         if "风险经理决策" in 结果:
             result["final_decision"] = 结果["风险经理决策"]
@@ -522,7 +506,7 @@ class ReportGenerator:
                     </div>
                 </div>'''
         else:
-            debate_html = "<p class=\"no-data\">辩论数据待生成</p>"
+            debate_html = "<p class=\"no-data\">⚠️ 辩论数据未写入或格式不完整，请检查分析流程是否正常完成</p>"
 
         html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
