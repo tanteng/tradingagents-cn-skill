@@ -151,6 +151,7 @@ def main():
     parser.add_argument("--data", help="要写入的 JSON 数据（字符串或 @文件路径）")
     parser.add_argument("--read", action="store_true", help="读取整个文件")
     parser.add_argument("--status", action="store_true", help="查看所有步骤状态")
+    parser.add_argument("--field-map", action="store_true", help="显示所有字段映射关系")
     parser.add_argument("--path", help="直接指定 JSON 文件路径（省略查找）")
     args = parser.parse_args()
 
@@ -198,6 +199,19 @@ def main():
             sys.exit(1)
         data = read_file(json_path)
         print(json.dumps(data, ensure_ascii=False, indent=2))
+        return
+
+    if args.field_map:
+        print("字段映射对照表：")
+        print("-" * 60)
+        print(f"{'--step 参数':<20} {'写入路径':<30} {'说明'}")
+        print("-" * 60)
+        for step_en, path in sorted(STEP_RESULT_PATH.items()):
+            cn_key = STEP_KEYS.get(step_en, step_en)
+            desc = _SCHEMA.get("step_mappings", {}).get(cn_key, {}).get("description", "")
+            print(f"{step_en:<20} {path:<30} {desc}")
+        print("-" * 60)
+        print("提示：--step 参数支持英文（bull_analyst）和中文（多头分析）")
         return
 
     if args.status:
