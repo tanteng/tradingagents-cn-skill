@@ -77,6 +77,23 @@ JSON_FILE=$(python3 {baseDir}/scripts/intermediate_shared.py \
 echo "中间文件: $JSON_FILE"
 ```
 
+### Step 1.5: 主 agent 预搜索（可选但推荐）
+
+**目的：** 避免 6 个 subagent 同时调用 web_search 导致限流
+
+```bash
+# 预搜索新闻和基本信息
+echo "开始预搜索股票信息..."
+web_search "{股票名称} {股票代码} 最新新闻 2026"
+web_search "{股票名称} {股票代码} 最新分析 2026"
+
+# 将搜索结果写入 news_data（subagent 将直接复用，不再调用 web_search）
+python3 {baseDir}/scripts/intermediate_shared.py \
+  --write --step news_data --data '<预搜索结果JSON>'
+```
+
+**注意：** 如果预搜索失败，subagent 将需要自己调用 web_search，建议使用错峰启动（每 3-5 秒启动一个）避免限流。
+
 ### Step 2: 并行 spawn 6 个分析师
 
 **使用 `sessions_spawn`** 并行启动 6 个 subagent，每个 subagent：
@@ -125,7 +142,7 @@ fi
 1. 读取共享数据文件：{JSON_FILE}
 2. 读取你的分析 prompt：{references/xxx_prompt.md}
 3. 从 JSON 文件中获取 current_price、stock_code、stock_name、text_description
-4. 使用 web_search 搜索近期新闻（{股票代码} {股票名称} 最新新闻）
+4. 从共享文件读取 news_data（主 agent 已预搜索）；若数据不足再调用 web_search 补充
 5. 基于 prompt 和数据，调用 LLM 生成分析结果（JSON 格式）
 6. 验证输出：echo '<LLM输出>' | python3 {baseDir}/scripts/validate_step.py --step {步骤名} --stock-code {股票代码} --attempt 1
 7. 写入结果：
